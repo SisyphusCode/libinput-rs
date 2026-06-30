@@ -239,23 +239,50 @@ impl DeviceWrapper {
     }
 }
 
-pub fn try_open_device(path: &Path) -> Option<DeviceWrapper> {
+fn disable_autosuspend(dev_path: &std::path::Path) {
+    if let Some(file_name) = dev_path.file_name() {
+        let mut sys_path = std::path::PathBuf::from("/sys/class/input");
+        sys_path.push(file_name);
+        sys_path.push("device");
+        
+        for _ in 0..4 {
+            let power_control = sys_path.join("power/control");
+            if power_control.exists() {
+                if let Err(e) = std::fs::write(&power_control, "on") {
+                    log::warn!("Failed to disable autosuspend at {:?}: {}", power_control, e);
+                } else {
+                    log::info!("Automatically disabled hardware autosuspend for {:?}", dev_path);
+                }
+            }
+            sys_path.push("..");
+        }
+    }
+}
+
+pub fn try_open_device(path: &std::path::Path) -> Option<DeviceWrapper> {
     if let Ok(mut device) = evdev::Device::open(path) {
         let name = device.name().unwrap_or("Unknown").to_lowercase();
+        
+        // Ignore virtual devices we created to prevent infinite loops
+        if name.contains("virtual pointer") {
+            return None;
+        }
         
         let is_pointer = name.contains("touchpad") || name.contains("trackpoint") || name.contains("elan") || name.contains("synaptics") || name.contains("mouse");
         let is_keyboard = device.supported_events().contains(EventType::KEY) && 
                           device.supported_keys().map_or(false, |keys| keys.contains(Key::KEY_A));
         
         if is_pointer {
-            info!("Found target pointer hardware: {} at {:?}", name, path);
+            log::info!("Found target pointer hardware: {} at {:?}", name, path);
             if let Ok(_) = device.grab() {
+                // Attempt to aggressively disable autosuspend for the hardware to prevent firmware freezing
+                disable_autosuspend(path);
                 return Some(DeviceWrapper::new(device, path.to_path_buf()));
             } else {
-                warn!("Failed to grab pointer device: {:?}", path);
+                log::warn!("Failed to grab pointer device: {:?}", path);
             }
         } else if is_keyboard {
-            info!("Found keyboard for DWT monitoring: {} at {:?}", name, path);
+            log::info!("Found keyboard for DWT monitoring: {} at {:?}", name, path);
             return Some(DeviceWrapper::new(device, path.to_path_buf()));
         }
     }
