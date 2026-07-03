@@ -111,9 +111,9 @@ pub fn run(
                     if trigger_reset {
                         static RESETTING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
                         if !RESETTING.swap(true, std::sync::atomic::Ordering::SeqCst) {
-                            println!("Manual hardware reset triggered via Ctrl+Alt+R! Calling systemctl to reset module...");
+                            println!("Manual hardware reset triggered via Ctrl+Alt+R! Calling forgectl to reset module...");
                             std::thread::spawn(|| {
-                                let _ = std::process::Command::new("systemctl").arg("start").arg("libinput-elan-reset.service").output();
+                                let _ = std::process::Command::new("forgectl").arg("start").arg("libinput-elan-reset").output();
                                 // Service takes 1 second to sleep, so we wait 2 seconds before unblocking
                                 std::thread::sleep(std::time::Duration::from_millis(2500));
                                 RESETTING.store(false, std::sync::atomic::Ordering::SeqCst);
