@@ -1,8 +1,7 @@
 use evdev::{Device, EventType, InputEvent, AbsoluteAxisType, RelativeAxisType, Key};
 use std::error::Error;
 use std::time::{Instant, Duration};
-use std::path::{Path, PathBuf};
-use log::{info, warn};
+use std::path::PathBuf;
 
 pub struct DeviceWrapper {
     pub device: Device,
@@ -35,8 +34,8 @@ pub struct DeviceWrapper {
 impl DeviceWrapper {
     pub fn new(device: Device, path: PathBuf) -> Self {
         let is_absolute = device.supported_events().contains(EventType::ABSOLUTE);
-        let is_keyboard = device.supported_events().contains(EventType::KEY) && 
-                          device.supported_keys().map_or(false, |keys| keys.contains(Key::KEY_A));
+        let is_keyboard = device.supported_events().contains(EventType::KEY)
+            && device.supported_keys().is_some_and(|keys| keys.contains(Key::KEY_A));
         
         Self {
             device,
@@ -309,12 +308,12 @@ pub fn try_open_device(path: &std::path::Path) -> Option<DeviceWrapper> {
         }
         
         let is_pointer = name.contains("touchpad") || name.contains("trackpoint") || name.contains("elan") || name.contains("synaptics") || name.contains("mouse");
-        let is_keyboard = device.supported_events().contains(EventType::KEY) && 
-                          device.supported_keys().map_or(false, |keys| keys.contains(Key::KEY_A));
+        let is_keyboard = device.supported_events().contains(EventType::KEY)
+            && device.supported_keys().is_some_and(|keys| keys.contains(Key::KEY_A));
         
         if is_pointer {
             println!("Found target pointer hardware: {} at {:?}", name, path);
-            if let Ok(_) = device.grab() {
+            if device.grab().is_ok() {
                 disable_autosuspend(path);
                 return Some(DeviceWrapper::new(device, path.to_path_buf()));
             } else {

@@ -60,7 +60,7 @@ pub fn run(
                                     let raw_fd = wrapper.device.as_raw_fd();
                                     let token = next_token;
                                     next_token += 1;
-                                    if let Ok(_) = poll.registry().register(&mut SourceFd(&raw_fd), Token(token), Interest::READABLE) {
+                                    if poll.registry().register(&mut SourceFd(&raw_fd), Token(token), Interest::READABLE).is_ok() {
                                         devices_map.insert(token, wrapper);
                                         info!("Successfully hotplugged device at {:?}", path);
                                     }
@@ -76,26 +76,31 @@ pub fn run(
             if let Some(wrapper) = devices_map.get_mut(&token_id) {
                 let device_events = match wrapper.device.fetch_events() {
                     Ok(ev_batch) => Some(ev_batch.collect::<Vec<InputEvent>>()),
-                    Err(e) => {
-                        if e.raw_os_error() == Some(nix::libc::ENODEV) || e.kind() == std::io::ErrorKind::UnexpectedEof {
-                            info!("Device disconnected: {:?}", wrapper.path);
-                            device_disconnected = true;
-                        } else if e.kind() != std::io::ErrorKind::WouldBlock {
-                            error!("Error fetching events from {:?}: {}", wrapper.path, e);
-                        }
+                    Err(e) if e.raw_os_error() == Some(nix::libc::ENODEV)
+                        || e.kind() == std::io::ErrorKind::UnexpectedEof =>
+                    {
+                        info!("Device disconnected: {:?}", wrapper.path);
+                        device_disconnected = true;
                         None
                     }
+                    Err(e) if e.kind() != std::io::ErrorKind::WouldBlock => {
+                        error!("Error fetching events from {:?}: {}", wrapper.path, e);
+                        None
+                    }
+                    Err(_) => None
                 };
 
                 if let Some(evs) = device_events {
                     let mut trigger_reset = false;
                     for ev in evs {
-                        if wrapper.is_keyboard && ev.event_type() == evdev::EventType::KEY && ev.value() == 1 {
-                            if ev.code() == evdev::Key::KEY_R.code() {
-                                if wrapper.ctrl_pressed && wrapper.alt_pressed {
-                                    trigger_reset = true;
-                                }
-                            }
+                        if wrapper.is_keyboard
+                            && ev.event_type() == evdev::EventType::KEY
+                            && ev.value() == 1
+                            && ev.code() == evdev::Key::KEY_R.code()
+                            && wrapper.ctrl_pressed
+                            && wrapper.alt_pressed
+                        {
+                            trigger_reset = true;
                         }
 
                         if let Err(e) = wrapper.process_event(ev, v_device, config, last_global_typing_time) {
