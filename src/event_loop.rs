@@ -63,6 +63,8 @@ pub fn run(
                                     if poll.registry().register(&mut SourceFd(&raw_fd), Token(token), Interest::READABLE).is_ok() {
                                         devices_map.insert(token, wrapper);
                                         info!("Successfully hotplugged device at {:?}", path);
+                                    } else {
+                                        warn!("Failed to register hotplugged device: {:?}", path);
                                     }
                                 }
                             }
@@ -116,7 +118,7 @@ pub fn run(
                     if trigger_reset {
                         static RESETTING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
                         if !RESETTING.swap(true, std::sync::atomic::Ordering::SeqCst) {
-                            println!("Manual hardware reset triggered via Ctrl+Alt+R! Calling forgectl to reset module...");
+                            info!("Manual hardware reset triggered via Ctrl+Alt+R! Calling forgectl to reset module...");
                             std::thread::spawn(|| {
                                 let _ = std::process::Command::new("forgectl").arg("start").arg("libinput-elan-reset").output();
                                 // Service takes 1 second to sleep, so we wait 2 seconds before unblocking

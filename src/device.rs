@@ -2,6 +2,7 @@ use evdev::{Device, EventType, InputEvent, AbsoluteAxisType, RelativeAxisType, K
 use std::error::Error;
 use std::time::{Instant, Duration};
 use std::path::PathBuf;
+use log::{info, warn};
 
 pub struct DeviceWrapper {
     pub device: Device,
@@ -29,6 +30,14 @@ pub struct DeviceWrapper {
     pub alt_pressed: bool,
     pub last_movement_time: Option<Instant>,
     pub active_click_button: Option<u16>,
+}
+
+impl Drop for DeviceWrapper {
+    fn drop(&mut self) {
+        // Ensure device is properly released to avoid resource leaks
+        let _ = self.device.ungrab();
+        info!("Released device: {:?}", self.path);
+    }
 }
 
 impl DeviceWrapper {
@@ -90,7 +99,7 @@ impl DeviceWrapper {
             return Ok(());
         }
 
-        // Disable-While-Typing (DWT) check
+        // Disable-While-Typing (DWT) check - moved before tap logic
         let mut dwt_active = false;
         if config.disable_while_typing {
             if let Some(typing_time) = last_global_typing_time {
@@ -98,6 +107,11 @@ impl DeviceWrapper {
                     dwt_active = true;
                 }
             }
+        }
+        
+        // If DWT is active, prevent taps from being emitted
+        if dwt_active {
+            self.tap_emitted = true;
         }
 
         // For absolute devices (touchpads), convert coordinate events into relative movements
@@ -118,10 +132,10 @@ impl DeviceWrapper {
                         if config.tap_to_click && !self.tap_emitted && !dwt_active {
                             if let Some(start) = self.touch_start_time {
                                 if start.elapsed() < Duration::from_millis(250) {
-                                    // Emit click
-                                    v_device.emit_raw(InputEvent::new(EventType::KEY, Key::BTN_LEFT.code(), 1)).unwrap_or(());
-                                    v_device.emit_raw(InputEvent::new(EventType::SYNCHRONIZATION, 0, 0)).unwrap_or(());
-                                    v_device.emit_raw(InputEvent::new(EventType::KEY, Key::BTN_LEFT.code(), 0)).unwrap_or(());
+                                    // Emit click with proper error handling
+                                    v_device.emit_raw(InputEvent::new(EventType::KEY, Key::BTN_LEFT.code(), 1))?;
+                                    v_device.emit_raw(InputEvent::new(EventType::SYNCHRONIZATION, 0, 0))?;
+                                    v_device.emit_raw(InputEvent::new(EventType::KEY, Key::BTN_LEFT.code(), 0))?;
                                 }
                             }
                         }
@@ -173,14 +187,17 @@ impl DeviceWrapper {
             }
             EventType::ABSOLUTE => {
                 let code = ev.code();
+                
+                // Only update last_movement_time when actual movement coordinates are received
                 if code == AbsoluteAxisType::ABS_X.0 || code == AbsoluteAxisType::ABS_Y.0 {
+                    // Only reset tracking if movement has stalled for more than 50ms
                     if let Some(last_time) = self.last_movement_time {
-                        if last_time.elapsed() > std::time::Duration::from_millis(50) {
+                        if last_time.elapsed() > Duration::from_millis(50) {
                             self.last_x = None;
                             self.last_y = None;
                         }
                     }
-                    self.last_movement_time = Some(std::time::Instant::now());
+                    self.last_movement_time = Some(Instant::now());
                 }
 
                 if code == AbsoluteAxisType::ABS_X.0 {
@@ -199,6 +216,8 @@ impl DeviceWrapper {
             }
             EventType::SYNCHRONIZATION => {
                 if ev.code() == 0 { // SYN_REPORT code is 0
+                    let has_movement = self.current_dx != 0 || self.current_dy != 0;
+                    
                     if dwt_active {
                         // Throw away movement completely
                         self.current_dx = 0;
@@ -206,7 +225,7 @@ impl DeviceWrapper {
                         self.remainder_x = 0.0;
                         self.remainder_y = 0.0;
                         self.tap_emitted = true; // prevent taps from happening
-                    } else if self.current_dx != 0 || self.current_dy != 0 {
+                    } else if has_movement {
                         self.tap_emitted = true; // Moved enough to cancel tap
 
                         if self.touch_fingers <= 1 {
@@ -264,7 +283,11 @@ impl DeviceWrapper {
                         self.current_dx = 0;
                         self.current_dy = 0;
                     }
-                    v_device.emit_raw(ev)?;
+                    
+                    // Only emit SYN_REPORT if we have valid movement or if DWT is not active
+                    if has_movement || !dwt_active {
+                        v_device.emit_raw(ev)?;
+                    }
                 } else {
                     v_device.emit_raw(ev)?;
                 }
@@ -300,8 +323,8 @@ fn disable_autosuspend(dev_path: &std::path::Path) {
 
 pub fn try_open_device(path: &std::path::Path) -> Option<DeviceWrapper> {
     if let Ok(mut device) = evdev::Device::open(path) {
-        let name = device.name().unwrap_or("Unknown").to_lowercase();
-        println!("Checking device at {:?}: {}", path, name);
+        let name = device.name().unwrap_or("Unknown").to_string();
+        info!("Checking device at {:?}: {}", path, name);
         // Skip virtual devices and non-pointers
         if name.contains("virtual pointer") || name.contains("libinput-rs") {
             return None;
@@ -312,19 +335,19 @@ pub fn try_open_device(path: &std::path::Path) -> Option<DeviceWrapper> {
             && device.supported_keys().is_some_and(|keys| keys.contains(Key::KEY_A));
         
         if is_pointer {
-            println!("Found target pointer hardware: {} at {:?}", name, path);
+            info!("Found target pointer hardware: {} at {:?}", name, path);
             if device.grab().is_ok() {
                 disable_autosuspend(path);
                 return Some(DeviceWrapper::new(device, path.to_path_buf()));
             } else {
-                println!("Failed to grab pointer device: {:?}", path);
+                warn!("Failed to grab pointer device: {:?}", path);
             }
         } else if is_keyboard {
-            println!("Found keyboard for DWT monitoring: {} at {:?}", name, path);
+            info!("Found keyboard for DWT monitoring: {} at {:?}", name, path);
             return Some(DeviceWrapper::new(device, path.to_path_buf()));
         }
     } else {
-        println!("Failed to open device {:?}", path);
+        warn!("Failed to open device {:?}", path);
     }
     None
 }

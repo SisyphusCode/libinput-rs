@@ -1,8 +1,16 @@
 use evdev::{uinput::VirtualDeviceBuilder, InputEvent, Key, RelativeAxisType};
 use std::error::Error;
+use log::info;
 
 pub struct VirtualDevice {
     device: evdev::uinput::VirtualDevice,
+}
+
+impl Drop for VirtualDevice {
+    fn drop(&mut self) {
+        // The VirtualDevice will be automatically destroyed when dropped
+        info!("Virtual input device destroyed");
+    }
 }
 
 impl VirtualDevice {
