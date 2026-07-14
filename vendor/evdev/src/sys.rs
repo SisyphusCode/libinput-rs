@@ -1,11 +1,13 @@
+#![allow(non_camel_case_types)]
+
 use crate::compat::{
     ff_condition_effect, ff_constant_effect, ff_periodic_effect, ff_ramp_effect, ff_replay,
     ff_rumble_effect, ff_trigger, input_absinfo, input_id, input_keymap_entry, uinput_abs_setup,
     uinput_setup,
 };
 use nix::{
-    convert_ioctl_res, ioctl_none, ioctl_read, ioctl_read_buf, ioctl_readwrite, ioctl_write_buf,
-    ioctl_write_int, ioctl_write_ptr, request_code_read,
+    convert_ioctl_res, ioctl_none, ioctl_read, ioctl_read_buf, ioctl_readwrite, ioctl_write_int,
+    ioctl_write_ptr, request_code_read,
 };
 
 #[repr(C)]
@@ -86,17 +88,11 @@ ioctl_write_int!(ui_set_mscbit, UINPUT_IOCTL_BASE, 104);
 ioctl_write_int!(ui_set_ledbit, UINPUT_IOCTL_BASE, 105);
 ioctl_write_int!(ui_set_sndbit, UINPUT_IOCTL_BASE, 106);
 ioctl_write_int!(ui_set_ffbit, UINPUT_IOCTL_BASE, 107);
-ioctl_write_buf!(ui_set_phys, UINPUT_IOCTL_BASE, 108, u8);
+ioctl_write_ptr!(ui_set_phys, UINPUT_IOCTL_BASE, 108, libc::c_char);
 ioctl_write_int!(ui_set_swbit, UINPUT_IOCTL_BASE, 109);
 ioctl_write_int!(ui_set_propbit, UINPUT_IOCTL_BASE, 110);
 
-pub unsafe fn ui_get_sysname(fd: ::libc::c_int, bytes: &mut [u8]) -> ::nix::Result<::libc::c_int> {
-    convert_ioctl_res!(::nix::libc::ioctl(
-        fd,
-        request_code_read!(UINPUT_IOCTL_BASE, 300, bytes.len()),
-        bytes.as_mut_ptr(),
-    ))
-}
+ioctl_read_buf!(ui_get_sysname, UINPUT_IOCTL_BASE, 300, u8);
 
 ioctl_readwrite!(ui_begin_ff_upload, UINPUT_IOCTL_BASE, 200, uinput_ff_upload);
 ioctl_write_ptr!(ui_end_ff_upload, UINPUT_IOCTL_BASE, 201, uinput_ff_upload);

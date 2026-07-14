@@ -17,19 +17,54 @@
 //! devices and send events to the virtual devices.
 //! Virtual devices are created in `/sys/devices/virtual/input`.
 //!
-//! Devices emit events, represented by the [`InputEvent`] type. Each device supports a few different
-//! kinds of events, specified by the [`EventType`] struct and the [`Device::supported_events()`]
-//! method. Most event types also have a "subtype", e.g. a `KEY` event with a `KEY_ENTER` code. This
-//! type+subtype combo is represented by [`InputEventKind`]/[`InputEvent::kind()`]. The individual
-//! subtypes of a type that a device supports can be retrieved through the `Device::supported_*()`
-//! methods, e.g. [`Device::supported_keys()`]:
+//! # Devices
+//!
+//! Devices can be opened directly via their path:
+//! ```no_run
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! use evdev::Device;
+//! let device = Device::open("/dev/input/event0")?;
+//! # Ok(())
+//! # }
+//! ```
+//! This approach requires the calling process to have the appropriate privileges to
+//! open the device node (typically this requires running as root user).
+//! Alternatively a device can be created from an already open file descriptor. This approach
+//! is useful where the file descriptor is provided by an external privileged process
+//! (e.g. systemd's logind):
 //!
 //! ```no_run
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! use evdev::{Device, Key};
+//! use evdev::Device;
+//! use std::fs::File;
+//! use std::os::fd::OwnedFd;
+//! let f = File::open("/dev/input/event0")?;
+//! let fd = OwnedFd::from(f);
+//! let device = Device::from_fd(fd)?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! # Input Events
+//!
+//! Devices emit events, represented by the [`InputEvent`] struct.
+//! A input event has three main fields: event [type](InputEvent::event_type), [code](InputEvent::code)
+//! and [value](InputEvent::value)
+//!
+//! The kernel documentation specifies different event types, reperesented by the [`EventType`] struct.
+//! Each device can support a subset of those types. See [`Device::supported_events()`].
+//! For each of the known event types there is a new-type wrapper around [`InputEvent`]  
+//! in [`event_variants`] see the module documenation for more info about those.
+//!
+//! For most event types the kernel documentation also specifies a set of codes, represented by a new-type
+//! e.g. [`KeyCode`]. The individual codes of a [`EventType`] that a device supports can be retrieved
+//! through the `Device::supported_*()` methods, e.g. [`Device::supported_keys()`]:
+//! ```no_run
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! use evdev::{Device, KeyCode};
 //! let device = Device::open("/dev/input/event0")?;
 //! // check if the device has an ENTER key
-//! if device.supported_keys().map_or(false, |keys| keys.contains(Key::KEY_ENTER)) {
+//! if device.supported_keys().map_or(false, |keys| keys.contains(KeyCode::KEY_ENTER)) {
 //!     println!("are you prepared to ENTER the world of evdev?");
 //! } else {
 //!     println!(":(");
@@ -37,6 +72,8 @@
 //! # Ok(())
 //! # }
 //! ```
+//! A [`InputEvent`] with a type of [`EventType::KEY`] a code of [`KeyCode::KEY_ENTER`] and a
+//! value of 1 is emitted when the Enter key is pressed.
 //!
 //! All events (even single events) are sent in batches followed by a synchronization event:
 //! `EV_SYN / SYN_REPORT / 0`.
@@ -48,6 +85,35 @@
 //! well as a function that can be called continuously to provide an iterator over update events
 //! as they arrive.
 //!
+//! ## Matching Events
+//!
+//! When reading from an input Device it is often useful to check which type/code or value
+//! the event has. This library provides the [`EventSummary`] enum which can be used to
+//! match specific events. Calling [`InputEvent::destructure`] will return that enum.
+//!
+//! ```no_run
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! use evdev::*;
+//! let mut device = Device::open("/dev/input/event0")?;
+//! loop {
+//!     for event in device.fetch_events().unwrap(){
+//!         match event.destructure(){
+//!             EventSummary::Key(ev, KeyCode::KEY_A, 1) => {
+//!                 println!("Key 'a' was pressed, got event: {:?}", ev);
+//!             },
+//!             EventSummary::Key(_, key_type, 0) => {
+//!                 println!("Key {:?} was released", key_type);
+//!             },
+//!             EventSummary::AbsoluteAxis(_, axis, value) => {
+//!                 println!("The Axis {:?} was moved to {}", axis, value);
+//!             },
+//!             _ => println!("got a different event!")
+//!         }
+//!     }
+//! }
+//! # unreachable!()
+//! # }
+//! ```
 //!
 //! # Synchronizing versus Raw modes
 //!
@@ -102,54 +168,99 @@ mod attribute_set;
 mod compat;
 mod constants;
 mod device_state;
-mod error;
+pub mod event_variants;
 mod ff;
 mod inputid;
 pub mod raw_stream;
 mod scancodes;
 mod sync_stream;
 mod sys;
+#[cfg(test)]
+mod tests;
 pub mod uinput;
 
-#[cfg(feature = "serde")]
-use serde_1::{Deserialize, Serialize};
-
 use crate::compat::{input_absinfo, input_event, uinput_abs_setup};
-use std::fmt;
+use std::fmt::{self, Display};
+use std::io;
+use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
 pub use attribute_set::{AttributeSet, AttributeSetRef, EvdevEnum};
 pub use constants::*;
 pub use device_state::DeviceState;
-pub use error::Error;
+pub use event_variants::*;
 pub use ff::*;
 pub use inputid::*;
-pub use raw_stream::{AutoRepeat, FFEffect};
 pub use scancodes::*;
 pub use sync_stream::*;
 
+macro_rules! common_trait_impls {
+    ($raw:ty, $wrapper:ty) => {
+        impl From<$raw> for $wrapper {
+            fn from(raw: $raw) -> Self {
+                Self(raw)
+            }
+        }
+
+        impl From<$wrapper> for $raw {
+            fn from(wrapper: $wrapper) -> Self {
+                wrapper.0
+            }
+        }
+
+        impl AsRef<$raw> for $wrapper {
+            fn as_ref(&self) -> &$raw {
+                &self.0
+            }
+        }
+    };
+}
+
 const EVENT_BATCH_SIZE: usize = 32;
 
-/// A convenience mapping from an event `(type, code)` to an enumeration.
+/// A convenience mapping for matching a [`InputEvent`] while simultaniously checking its kind `(type, code)`
+/// and capturing the value
 ///
-/// Note that this does not capture an event's value, just the type and code.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "serde", serde(crate = "serde_1"))]
-pub enum InputEventKind {
-    Synchronization(Synchronization),
-    Key(Key),
-    RelAxis(RelativeAxisType),
-    AbsAxis(AbsoluteAxisType),
-    Misc(MiscType),
-    Switch(SwitchType),
-    Led(LedType),
-    Sound(SoundType),
-    ForceFeedback(u16),
-    ForceFeedbackStatus(u16),
-    UInput(u16),
-    Other,
+/// Note This enum can not enforce that `InputEvent.code() == ` enum variant(code).
+/// It is suggested to not construct this enum and instead use [`InputEvent::destructure`] to obtain instances.
+#[derive(Debug)]
+pub enum EventSummary {
+    Synchronization(SynchronizationEvent, SynchronizationCode, i32),
+    Key(KeyEvent, KeyCode, i32),
+    RelativeAxis(RelativeAxisEvent, RelativeAxisCode, i32),
+    AbsoluteAxis(AbsoluteAxisEvent, AbsoluteAxisCode, i32),
+    Misc(MiscEvent, MiscCode, i32),
+    Switch(SwitchEvent, SwitchCode, i32),
+    Led(LedEvent, LedCode, i32),
+    Sound(SoundEvent, SoundCode, i32),
+    Repeat(RepeatEvent, RepeatCode, i32),
+    ForceFeedback(FFEvent, FFEffectCode, i32),
+    Power(PowerEvent, PowerCode, i32),
+    ForceFeedbackStatus(FFStatusEvent, FFStatusCode, i32),
+    UInput(UInputEvent, UInputCode, i32),
+    Other(OtherEvent, OtherCode, i32),
+}
+
+impl From<InputEvent> for EventSummary {
+    fn from(value: InputEvent) -> Self {
+        match value.event_type() {
+            EventType::SYNCHRONIZATION => SynchronizationEvent::from_event(value).into(),
+            EventType::KEY => KeyEvent::from_event(value).into(),
+            EventType::RELATIVE => RelativeAxisEvent::from_event(value).into(),
+            EventType::ABSOLUTE => AbsoluteAxisEvent::from_event(value).into(),
+            EventType::MISC => MiscEvent::from_event(value).into(),
+            EventType::SWITCH => SwitchEvent::from_event(value).into(),
+            EventType::LED => LedEvent::from_event(value).into(),
+            EventType::SOUND => SoundEvent::from_event(value).into(),
+            EventType::REPEAT => RepeatEvent::from_event(value).into(),
+            EventType::FORCEFEEDBACK => FFEvent::from_event(value).into(),
+            EventType::POWER => PowerEvent::from_event(value).into(),
+            EventType::FORCEFEEDBACKSTATUS => FFStatusEvent::from_event(value).into(),
+            EventType::UINPUT => UInputEvent::from_event(value).into(),
+            _ => OtherEvent(value).into(),
+        }
+    }
 }
 
 /// A wrapped `input_absinfo` returned by EVIOCGABS and used with uinput to set up absolute
@@ -163,7 +274,7 @@ pub enum InputEventKind {
 /// - `flat: s32`
 /// - `resolution: s32`
 ///
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 #[repr(transparent)]
 pub struct AbsInfo(input_absinfo);
 
@@ -213,12 +324,14 @@ impl AbsInfo {
     }
 }
 
+common_trait_impls!(input_absinfo, AbsInfo);
+
 /// A wrapped `uinput_abs_setup`, used to set up analogue axes with uinput
 ///
 /// `uinput_abs_setup` is a struct containing two fields:
 /// - `code: u16`
 /// - `absinfo: input_absinfo`
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 #[repr(transparent)]
 pub struct UinputAbsSetup(uinput_abs_setup);
 
@@ -232,13 +345,15 @@ impl UinputAbsSetup {
         AbsInfo(self.0.absinfo)
     }
     /// Creates new UinputAbsSetup
-    pub fn new(code: AbsoluteAxisType, absinfo: AbsInfo) -> Self {
+    pub fn new(code: AbsoluteAxisCode, absinfo: AbsInfo) -> Self {
         UinputAbsSetup(uinput_abs_setup {
             code: code.0,
             absinfo: absinfo.0,
         })
     }
 }
+
+common_trait_impls!(uinput_abs_setup, UinputAbsSetup);
 
 /// A wrapped `input_event` returned by the input device via the kernel.
 ///
@@ -249,9 +364,10 @@ impl UinputAbsSetup {
 /// - `value: s32`
 ///
 /// The meaning of the "code" and "value" fields will depend on the underlying type of event.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
 #[repr(transparent)]
 pub struct InputEvent(input_event);
+common_trait_impls!(input_event, InputEvent);
 
 impl InputEvent {
     /// Returns the timestamp associated with the event.
@@ -272,30 +388,6 @@ impl InputEvent {
         self.0.code
     }
 
-    /// A convenience function to return `self.code()` wrapped in a certain newtype determined by
-    /// the type of this event.
-    ///
-    /// This is useful if you want to match events by specific key codes or axes. Note that this
-    /// does not capture the event value, just the type and code.
-    #[inline]
-    pub fn kind(&self) -> InputEventKind {
-        let code = self.code();
-        match self.event_type() {
-            EventType::SYNCHRONIZATION => InputEventKind::Synchronization(Synchronization(code)),
-            EventType::KEY => InputEventKind::Key(Key::new(code)),
-            EventType::RELATIVE => InputEventKind::RelAxis(RelativeAxisType(code)),
-            EventType::ABSOLUTE => InputEventKind::AbsAxis(AbsoluteAxisType(code)),
-            EventType::MISC => InputEventKind::Misc(MiscType(code)),
-            EventType::SWITCH => InputEventKind::Switch(SwitchType(code)),
-            EventType::LED => InputEventKind::Led(LedType(code)),
-            EventType::SOUND => InputEventKind::Sound(SoundType(code)),
-            EventType::FORCEFEEDBACK => InputEventKind::ForceFeedback(code),
-            EventType::FORCEFEEDBACKSTATUS => InputEventKind::ForceFeedbackStatus(code),
-            EventType::UINPUT => InputEventKind::UInput(code),
-            _ => InputEventKind::Other,
-        }
-    }
-
     /// Returns the raw "value" field directly from input_event.
     ///
     /// For keys and switches the values 0 and 1 map to pressed and not pressed respectively.
@@ -305,17 +397,33 @@ impl InputEvent {
         self.0.value
     }
 
+    /// A convenience function to destructure the InputEvent into a [`EventSummary`].
+    ///
+    /// # Example
+    /// ```
+    /// use evdev::*;
+    /// let event =  InputEvent::new(1, KeyCode::KEY_A.0, 1);
+    /// match event.destructure() {
+    ///     EventSummary::Key(KeyEvent, KeyCode::KEY_A, 1) => (),
+    ///     _=> panic!(),
+    /// }
+    /// ```
+    pub fn destructure(self) -> EventSummary {
+        self.into()
+    }
+
     /// Create a new InputEvent. Only really useful for emitting events on virtual devices.
-    pub fn new(type_: EventType, code: u16, value: i32) -> Self {
-        InputEvent(input_event {
+    pub fn new(type_: u16, code: u16, value: i32) -> Self {
+        let raw = input_event {
             time: libc::timeval {
                 tv_sec: 0,
                 tv_usec: 0,
             },
-            type_: type_.0,
+            type_,
             code,
             value,
-        })
+        };
+        Self(raw)
     }
 
     /// Create a new InputEvent with the time field set to "now" on the system clock.
@@ -324,41 +432,42 @@ impl InputEvent {
     /// even though [`InputEvent::new`] creates an `input_event` with the time field as zero,
     /// the kernel will update `input_event.time` when it emits the events to any programs reading
     /// the event "file".
-    pub fn new_now(type_: EventType, code: u16, value: i32) -> Self {
-        InputEvent(input_event {
+    pub fn new_now(type_: u16, code: u16, value: i32) -> Self {
+        let raw = input_event {
             time: systime_to_timeval(&SystemTime::now()),
-            type_: type_.0,
+            type_,
             code,
             value,
-        })
-    }
-}
-
-impl From<input_event> for InputEvent {
-    fn from(raw: input_event) -> Self {
+        };
         Self(raw)
-    }
-}
-
-impl AsRef<input_event> for InputEvent {
-    fn as_ref(&self) -> &input_event {
-        &self.0
     }
 }
 
 impl fmt::Debug for InputEvent {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut debug = f.debug_struct("InputEvent");
-        debug.field("time", &self.timestamp());
-        let kind = self.kind();
-        if let InputEventKind::Other = kind {
-            debug
-                .field("type", &self.event_type())
-                .field("code", &self.code());
-        } else {
-            debug.field("kind", &kind);
-        }
-        debug.field("value", &self.value()).finish()
+        let summary = self.destructure();
+        let code: &dyn fmt::Debug = match &summary {
+            EventSummary::Synchronization(_, code, _) => code,
+            EventSummary::Key(_, code, _) => code,
+            EventSummary::RelativeAxis(_, code, _) => code,
+            EventSummary::AbsoluteAxis(_, code, _) => code,
+            EventSummary::Misc(_, code, _) => code,
+            EventSummary::Switch(_, code, _) => code,
+            EventSummary::Led(_, code, _) => code,
+            EventSummary::Sound(_, code, _) => code,
+            EventSummary::Repeat(_, code, _) => code,
+            EventSummary::ForceFeedback(_, code, _) => code,
+            EventSummary::Power(_, code, _) => code,
+            EventSummary::ForceFeedbackStatus(_, code, _) => code,
+            EventSummary::UInput(_, code, _) => code,
+            EventSummary::Other(_, code, _) => &code.1,
+        };
+        f.debug_struct("InputEvent")
+            .field("time", &self.timestamp())
+            .field("type", &self.event_type())
+            .field("code", code)
+            .field("value", &self.value())
+            .finish()
     }
 }
 
@@ -372,6 +481,7 @@ pub fn enumerate() -> EnumerateDevices {
     }
 }
 
+/// An iterator over currently connected evdev devices.
 pub struct EnumerateDevices {
     inner: raw_stream::EnumerateDevices,
 }
@@ -411,5 +521,89 @@ pub(crate) unsafe fn cast_to_bytes<T: ?Sized>(mem: &T) -> &[u8] {
     std::slice::from_raw_parts(mem as *const T as *const u8, std::mem::size_of_val(mem))
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// An error type for the `FromStr` implementation for enum-like types in this crate.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EnumParseError(());
+
+impl Display for EnumParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "failed to parse Key from string")
+    }
+}
+
+impl std::error::Error for EnumParseError {}
+
+fn fd_write_all(fd: std::os::fd::BorrowedFd<'_>, mut data: &[u8]) -> nix::Result<()> {
+    loop {
+        match nix::unistd::write(fd, data) {
+            Ok(0) => return Ok(()),
+            Ok(n) => data = &data[n..],
+            Err(nix::Error::EINTR) => {}
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+fn write_events(fd: std::os::fd::BorrowedFd<'_>, events: &[InputEvent]) -> nix::Result<()> {
+    let bytes = unsafe { cast_to_bytes(events) };
+    fd_write_all(fd, bytes)
+}
+
+/// Represents a force feedback effect that has been successfully uploaded to the device for
+/// playback.
+#[derive(Debug)]
+pub struct FFEffect {
+    fd: OwnedFd,
+    id: u16,
+}
+
+impl FFEffect {
+    /// Returns the effect ID.
+    pub fn id(&self) -> u16 {
+        self.id
+    }
+
+    /// Plays the force feedback effect with the `count` argument specifying how often the effect
+    /// should be played.
+    pub fn play(&mut self, count: i32) -> io::Result<()> {
+        let events = [*FFEvent::new(FFEffectCode(self.id), count)];
+        crate::write_events(self.fd.as_fd(), &events)?;
+
+        Ok(())
+    }
+
+    /// Stops playback of the force feedback effect.
+    pub fn stop(&mut self) -> io::Result<()> {
+        let events = [*FFEvent::new(FFEffectCode(self.id), 0)];
+        crate::write_events(self.fd.as_fd(), &events)?;
+
+        Ok(())
+    }
+
+    /// Updates the force feedback effect.
+    pub fn update(&mut self, data: FFEffectData) -> io::Result<()> {
+        let mut effect: sys::ff_effect = data.into();
+        effect.id = self.id as i16;
+
+        unsafe { sys::eviocsff(self.fd.as_raw_fd(), &effect)? };
+
+        Ok(())
+    }
+}
+
+impl Drop for FFEffect {
+    fn drop(&mut self) {
+        let _ = unsafe { sys::eviocrmff(self.fd.as_raw_fd(), self.id as _) };
+    }
+}
+
+/// Auto-repeat settings for a device.
+#[derive(Debug, Clone)]
+#[repr(C)]
+pub struct AutoRepeat {
+    /// The duration, in milliseconds, that a key needs to be held down before
+    /// it begins to auto-repeat.
+    pub delay: u32,
+    /// The duration, in milliseconds, between auto-repetitions of a held-down key.
+    pub period: u32,
+}

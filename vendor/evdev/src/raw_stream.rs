@@ -1,14 +1,18 @@
+//! A device implementation with no userspace synchronization performed.
+
 use std::fs::{File, OpenOptions};
-use std::io::Write;
 use std::mem::MaybeUninit;
-use std::os::unix::io::{AsRawFd, RawFd};
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::{io, mem};
 
 use crate::compat::{input_absinfo, input_event, input_id, input_keymap_entry};
 use crate::constants::*;
 use crate::ff::*;
-use crate::{sys, AttributeSet, AttributeSetRef, FFEffectType, InputEvent, InputId, Key};
+use crate::{
+    sys, AbsInfo, AttributeSet, AttributeSetRef, AutoRepeat, FFEffect, FFEffectCode, FFEvent,
+    InputEvent, InputId, KeyCode,
+};
 
 fn ioctl_get_cstring(
     f: unsafe fn(RawFd, &mut [u8]) -> nix::Result<libc::c_int>,
@@ -43,69 +47,23 @@ const ABSINFO_ZERO: input_absinfo = input_absinfo {
     resolution: 0,
 };
 
-pub(crate) const ABS_VALS_INIT: [input_absinfo; AbsoluteAxisType::COUNT] =
-    [ABSINFO_ZERO; AbsoluteAxisType::COUNT];
+pub(crate) const ABS_VALS_INIT: [input_absinfo; AbsoluteAxisCode::COUNT] =
+    [ABSINFO_ZERO; AbsoluteAxisCode::COUNT];
 
 const INPUT_KEYMAP_BY_INDEX: u8 = 1;
-
-/// Represents a force feedback effect that has been successfully uploaded to the device for
-/// playback.
-#[derive(Debug)]
-pub struct FFEffect {
-    file: File,
-    id: u16,
-}
-
-impl FFEffect {
-    /// Returns the effect ID.
-    pub fn id(&self) -> u16 {
-        self.id
-    }
-
-    /// Plays the force feedback effect with the `count` argument specifying how often the effect
-    /// should be played.
-    pub fn play(&mut self, count: i32) -> io::Result<()> {
-        let events = [InputEvent::new(EventType::FORCEFEEDBACK, self.id, count)];
-        let bytes = unsafe { crate::cast_to_bytes(&events) };
-        self.file.write_all(bytes)?;
-
-        Ok(())
-    }
-
-    /// Stops playback of the force feedback effect.
-    pub fn stop(&mut self) -> io::Result<()> {
-        let events = [InputEvent::new(EventType::FORCEFEEDBACK, self.id, 0)];
-        let bytes = unsafe { crate::cast_to_bytes(&events) };
-        self.file.write_all(bytes)?;
-
-        Ok(())
-    }
-
-    /// Updates the force feedback effect.
-    pub fn update(&mut self, data: FFEffectData) -> io::Result<()> {
-        let mut effect: sys::ff_effect = data.into();
-        effect.id = self.id as i16;
-
-        unsafe { sys::eviocsff(self.file.as_raw_fd(), &effect)? };
-
-        Ok(())
-    }
-}
-
-impl Drop for FFEffect {
-    fn drop(&mut self) {
-        let _ = unsafe { sys::eviocrmff(self.file.as_raw_fd(), self.id as _) };
-    }
-}
 
 /// A physical or virtual device supported by evdev.
 ///
 /// Each device corresponds to a path typically found in `/dev/input`, and supports access via
 /// one or more "types". For example, an optical mouse has buttons that are represented by "keys",
 /// and reflects changes in its position via "relative axis" reports.
+///
+/// If events are dropped from the kernel's internal buffer, no synchronization will be done to
+/// fetch the device's state, meaning the state as observed through events may drift from
+/// the actual state of the device.
 #[derive(Debug)]
 pub struct RawDevice {
-    file: File,
+    fd: OwnedFd,
     ty: AttributeSet<EventType>,
     name: Option<String>,
     phys: Option<String>,
@@ -113,27 +71,20 @@ pub struct RawDevice {
     id: input_id,
     props: AttributeSet<PropType>,
     driver_version: (u8, u8, u8),
-    supported_keys: Option<AttributeSet<Key>>,
-    supported_relative: Option<AttributeSet<RelativeAxisType>>,
-    supported_absolute: Option<AttributeSet<AbsoluteAxisType>>,
-    supported_switch: Option<AttributeSet<SwitchType>>,
-    supported_led: Option<AttributeSet<LedType>>,
-    supported_misc: Option<AttributeSet<MiscType>>,
-    supported_ff: Option<AttributeSet<FFEffectType>>,
+    supported_keys: Option<AttributeSet<KeyCode>>,
+    supported_relative: Option<AttributeSet<RelativeAxisCode>>,
+    supported_absolute: Option<AttributeSet<AbsoluteAxisCode>>,
+    supported_switch: Option<AttributeSet<SwitchCode>>,
+    supported_led: Option<AttributeSet<LedCode>>,
+    supported_misc: Option<AttributeSet<MiscCode>>,
+    supported_ff: Option<AttributeSet<FFEffectCode>>,
     auto_repeat: Option<AutoRepeat>,
     max_ff_effects: usize,
     // ff: Option<AttributeSet<_>>,
     // ff_stat: Option<FFStatus>,
-    supported_snd: Option<AttributeSet<SoundType>>,
+    supported_snd: Option<AttributeSet<SoundCode>>,
     pub(crate) event_buf: Vec<input_event>,
     grabbed: bool,
-}
-
-#[derive(Debug, Clone)]
-#[repr(C)]
-pub struct AutoRepeat {
-    pub delay: u32,
-    pub period: u32,
 }
 
 impl RawDevice {
@@ -149,33 +100,36 @@ impl RawDevice {
         let mut options = OpenOptions::new();
 
         // Try to load read/write, then fall back to read-only.
-        let file = options
+        let fd: OwnedFd = options
             .read(true)
             .write(true)
             .open(path)
-            .or_else(|_| options.write(false).open(path))?;
+            .or_else(|_| options.write(false).open(path))?
+            .into();
 
+        Self::from_fd(fd)
+    }
+
+    /// Opens a device, given an already opened file descriptor
+    pub fn from_fd(fd: OwnedFd) -> io::Result<RawDevice> {
         let ty = {
             let mut ty = AttributeSet::<EventType>::new();
-            unsafe { sys::eviocgbit_type(file.as_raw_fd(), ty.as_mut_raw_slice())? };
+            unsafe { sys::eviocgbit_type(fd.as_raw_fd(), ty.as_mut_raw_slice())? };
             ty
         };
 
-        let name =
-            ioctl_get_cstring(sys::eviocgname, file.as_raw_fd()).map(bytes_into_string_lossy);
-        let phys =
-            ioctl_get_cstring(sys::eviocgphys, file.as_raw_fd()).map(bytes_into_string_lossy);
-        let uniq =
-            ioctl_get_cstring(sys::eviocguniq, file.as_raw_fd()).map(bytes_into_string_lossy);
+        let name = ioctl_get_cstring(sys::eviocgname, fd.as_raw_fd()).map(bytes_into_string_lossy);
+        let phys = ioctl_get_cstring(sys::eviocgphys, fd.as_raw_fd()).map(bytes_into_string_lossy);
+        let uniq = ioctl_get_cstring(sys::eviocguniq, fd.as_raw_fd()).map(bytes_into_string_lossy);
 
         let id = unsafe {
             let mut id = MaybeUninit::uninit();
-            sys::eviocgid(file.as_raw_fd(), id.as_mut_ptr())?;
+            sys::eviocgid(fd.as_raw_fd(), id.as_mut_ptr())?;
             id.assume_init()
         };
         let mut driver_version: i32 = 0;
         unsafe {
-            sys::eviocgversion(file.as_raw_fd(), &mut driver_version)?;
+            sys::eviocgversion(fd.as_raw_fd(), &mut driver_version)?;
         }
         let driver_version = (
             ((driver_version >> 16) & 0xff) as u8,
@@ -185,61 +139,61 @@ impl RawDevice {
 
         let props = {
             let mut props = AttributeSet::<PropType>::new();
-            unsafe { sys::eviocgprop(file.as_raw_fd(), props.as_mut_raw_slice())? };
+            unsafe { sys::eviocgprop(fd.as_raw_fd(), props.as_mut_raw_slice())? };
             props
         }; // FIXME: handle old kernel
 
         let supported_keys = if ty.contains(EventType::KEY) {
-            let mut keys = AttributeSet::<Key>::new();
-            unsafe { sys::eviocgbit_key(file.as_raw_fd(), keys.as_mut_raw_slice())? };
+            let mut keys = AttributeSet::<KeyCode>::new();
+            unsafe { sys::eviocgbit_key(fd.as_raw_fd(), keys.as_mut_raw_slice())? };
             Some(keys)
         } else {
             None
         };
 
         let supported_relative = if ty.contains(EventType::RELATIVE) {
-            let mut rel = AttributeSet::<RelativeAxisType>::new();
-            unsafe { sys::eviocgbit_relative(file.as_raw_fd(), rel.as_mut_raw_slice())? };
+            let mut rel = AttributeSet::<RelativeAxisCode>::new();
+            unsafe { sys::eviocgbit_relative(fd.as_raw_fd(), rel.as_mut_raw_slice())? };
             Some(rel)
         } else {
             None
         };
 
         let supported_absolute = if ty.contains(EventType::ABSOLUTE) {
-            let mut abs = AttributeSet::<AbsoluteAxisType>::new();
-            unsafe { sys::eviocgbit_absolute(file.as_raw_fd(), abs.as_mut_raw_slice())? };
+            let mut abs = AttributeSet::<AbsoluteAxisCode>::new();
+            unsafe { sys::eviocgbit_absolute(fd.as_raw_fd(), abs.as_mut_raw_slice())? };
             Some(abs)
         } else {
             None
         };
 
         let supported_switch = if ty.contains(EventType::SWITCH) {
-            let mut switch = AttributeSet::<SwitchType>::new();
-            unsafe { sys::eviocgbit_switch(file.as_raw_fd(), switch.as_mut_raw_slice())? };
+            let mut switch = AttributeSet::<SwitchCode>::new();
+            unsafe { sys::eviocgbit_switch(fd.as_raw_fd(), switch.as_mut_raw_slice())? };
             Some(switch)
         } else {
             None
         };
 
         let supported_led = if ty.contains(EventType::LED) {
-            let mut led = AttributeSet::<LedType>::new();
-            unsafe { sys::eviocgbit_led(file.as_raw_fd(), led.as_mut_raw_slice())? };
+            let mut led = AttributeSet::<LedCode>::new();
+            unsafe { sys::eviocgbit_led(fd.as_raw_fd(), led.as_mut_raw_slice())? };
             Some(led)
         } else {
             None
         };
 
         let supported_misc = if ty.contains(EventType::MISC) {
-            let mut misc = AttributeSet::<MiscType>::new();
-            unsafe { sys::eviocgbit_misc(file.as_raw_fd(), misc.as_mut_raw_slice())? };
+            let mut misc = AttributeSet::<MiscCode>::new();
+            unsafe { sys::eviocgbit_misc(fd.as_raw_fd(), misc.as_mut_raw_slice())? };
             Some(misc)
         } else {
             None
         };
 
         let supported_ff = if ty.contains(EventType::FORCEFEEDBACK) {
-            let mut ff = AttributeSet::<FFEffectType>::new();
-            unsafe { sys::eviocgbit_ff(file.as_raw_fd(), ff.as_mut_raw_slice())? };
+            let mut ff = AttributeSet::<FFEffectCode>::new();
+            unsafe { sys::eviocgbit_ff(fd.as_raw_fd(), ff.as_mut_raw_slice())? };
             Some(ff)
         } else {
             None
@@ -247,15 +201,15 @@ impl RawDevice {
 
         let max_ff_effects = if ty.contains(EventType::FORCEFEEDBACK) {
             let mut max_ff_effects = 0;
-            unsafe { sys::eviocgeffects(file.as_raw_fd(), &mut max_ff_effects)? };
+            unsafe { sys::eviocgeffects(fd.as_raw_fd(), &mut max_ff_effects)? };
             usize::try_from(max_ff_effects).unwrap_or(0)
         } else {
             0
         };
 
         let supported_snd = if ty.contains(EventType::SOUND) {
-            let mut snd = AttributeSet::<SoundType>::new();
-            unsafe { sys::eviocgbit_sound(file.as_raw_fd(), snd.as_mut_raw_slice())? };
+            let mut snd = AttributeSet::<SoundCode>::new();
+            unsafe { sys::eviocgbit_sound(fd.as_raw_fd(), snd.as_mut_raw_slice())? };
             Some(snd)
         } else {
             None
@@ -269,7 +223,7 @@ impl RawDevice {
 
             unsafe {
                 sys::eviocgrep(
-                    file.as_raw_fd(),
+                    fd.as_raw_fd(),
                     &mut auto_repeat as *mut AutoRepeat as *mut [u32; 2],
                 )?;
             }
@@ -280,7 +234,7 @@ impl RawDevice {
         };
 
         Ok(RawDevice {
-            file,
+            fd,
             ty,
             name,
             phys,
@@ -355,15 +309,15 @@ impl RawDevice {
     ///
     /// ```no_run
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// use evdev::{Device, Key};
+    /// use evdev::{Device, KeyCode};
     /// let device = Device::open("/dev/input/event0")?;
     ///
     /// // Does this device have an ENTER key?
-    /// let supported = device.supported_keys().map_or(false, |keys| keys.contains(Key::KEY_ENTER));
+    /// let supported = device.supported_keys().map_or(false, |keys| keys.contains(KeyCode::KEY_ENTER));
     /// # Ok(())
     /// # }
     /// ```
-    pub fn supported_keys(&self) -> Option<&AttributeSetRef<Key>> {
+    pub fn supported_keys(&self) -> Option<&AttributeSetRef<KeyCode>> {
         self.supported_keys.as_deref()
     }
 
@@ -375,17 +329,17 @@ impl RawDevice {
     ///
     /// ```no_run
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// use evdev::{Device, RelativeAxisType};
+    /// use evdev::{Device, RelativeAxisCode};
     /// let device = Device::open("/dev/input/event0")?;
     ///
     /// // Does the device have a scroll wheel?
     /// let supported = device
     ///     .supported_relative_axes()
-    ///     .map_or(false, |axes| axes.contains(RelativeAxisType::REL_WHEEL));
+    ///     .map_or(false, |axes| axes.contains(RelativeAxisCode::REL_WHEEL));
     /// # Ok(())
     /// # }
     /// ```
-    pub fn supported_relative_axes(&self) -> Option<&AttributeSetRef<RelativeAxisType>> {
+    pub fn supported_relative_axes(&self) -> Option<&AttributeSetRef<RelativeAxisCode>> {
         self.supported_relative.as_deref()
     }
 
@@ -397,17 +351,17 @@ impl RawDevice {
     ///
     /// ```no_run
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// use evdev::{Device, AbsoluteAxisType};
+    /// use evdev::{Device, AbsoluteAxisCode};
     /// let device = Device::open("/dev/input/event0")?;
     ///
     /// // Does the device have an absolute X axis?
     /// let supported = device
     ///     .supported_absolute_axes()
-    ///     .map_or(false, |axes| axes.contains(AbsoluteAxisType::ABS_X));
+    ///     .map_or(false, |axes| axes.contains(AbsoluteAxisCode::ABS_X));
     /// # Ok(())
     /// # }
     /// ```
-    pub fn supported_absolute_axes(&self) -> Option<&AttributeSetRef<AbsoluteAxisType>> {
+    pub fn supported_absolute_axes(&self) -> Option<&AttributeSetRef<AbsoluteAxisCode>> {
         self.supported_absolute.as_deref()
     }
 
@@ -421,17 +375,17 @@ impl RawDevice {
     ///
     /// ```no_run
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// use evdev::{Device, SwitchType};
+    /// use evdev::{Device, SwitchCode};
     /// let device = Device::open("/dev/input/event0")?;
     ///
     /// // Does the device report a laptop lid switch?
     /// let supported = device
     ///     .supported_switches()
-    ///     .map_or(false, |axes| axes.contains(SwitchType::SW_LID));
+    ///     .map_or(false, |axes| axes.contains(SwitchCode::SW_LID));
     /// # Ok(())
     /// # }
     /// ```
-    pub fn supported_switches(&self) -> Option<&AttributeSetRef<SwitchType>> {
+    pub fn supported_switches(&self) -> Option<&AttributeSetRef<SwitchCode>> {
         self.supported_switch.as_deref()
     }
 
@@ -439,19 +393,19 @@ impl RawDevice {
     ///
     /// Most commonly these are state indicator lights for things like Scroll Lock, but they
     /// can also be found in cameras and other devices.
-    pub fn supported_leds(&self) -> Option<&AttributeSetRef<LedType>> {
+    pub fn supported_leds(&self) -> Option<&AttributeSetRef<LedCode>> {
         self.supported_led.as_deref()
     }
 
     /// Returns a set of supported "miscellaneous" capabilities.
     ///
     /// Aside from vendor-specific key scancodes, most of these are uncommon.
-    pub fn misc_properties(&self) -> Option<&AttributeSetRef<MiscType>> {
+    pub fn misc_properties(&self) -> Option<&AttributeSetRef<MiscCode>> {
         self.supported_misc.as_deref()
     }
 
     /// Returns the set of supported force feedback effects supported by a device.
-    pub fn supported_ff(&self) -> Option<&AttributeSetRef<FFEffectType>> {
+    pub fn supported_ff(&self) -> Option<&AttributeSetRef<FFEffectCode>> {
         self.supported_ff.as_deref()
     }
 
@@ -464,7 +418,7 @@ impl RawDevice {
     ///
     /// You can use these to make really annoying beep sounds come from an internal self-test
     /// speaker, for instance.
-    pub fn supported_sounds(&self) -> Option<&AttributeSetRef<SoundType>> {
+    pub fn supported_sounds(&self) -> Option<&AttributeSetRef<SoundCode>> {
         self.supported_snd.as_deref()
     }
 
@@ -476,8 +430,7 @@ impl RawDevice {
         let fd = self.as_raw_fd();
         self.event_buf.reserve(crate::EVENT_BATCH_SIZE);
 
-        // TODO: use Vec::spare_capacity_mut or Vec::split_at_spare_mut when they stabilize
-        let spare_capacity = vec_spare_capacity_mut(&mut self.event_buf);
+        let spare_capacity = self.event_buf.spare_capacity_mut();
         let spare_capacity_size = std::mem::size_of_val(spare_capacity);
 
         // use libc::read instead of nix::unistd::read b/c we need to pass an uninitialized buf
@@ -498,12 +451,12 @@ impl RawDevice {
     /// this in a tight loop within a thread.
     pub fn fetch_events(&mut self) -> io::Result<impl Iterator<Item = InputEvent> + '_> {
         self.fill_events()?;
-        Ok(self.event_buf.drain(..).map(InputEvent))
+        Ok(self.event_buf.drain(..).map(InputEvent::from))
     }
 
     /// Retrieve the current keypress state directly via kernel syscall.
     #[inline]
-    pub fn get_key_state(&self) -> io::Result<AttributeSet<Key>> {
+    pub fn get_key_state(&self) -> io::Result<AttributeSet<KeyCode>> {
         let mut key_vals = AttributeSet::new();
         self.update_key_state(&mut key_vals)?;
         Ok(key_vals)
@@ -511,15 +464,27 @@ impl RawDevice {
 
     /// Retrieve the current absolute axis state directly via kernel syscall.
     #[inline]
-    pub fn get_abs_state(&self) -> io::Result<[input_absinfo; AbsoluteAxisType::COUNT]> {
-        let mut abs_vals: [input_absinfo; AbsoluteAxisType::COUNT] = ABS_VALS_INIT;
+    pub fn get_abs_state(&self) -> io::Result<[input_absinfo; AbsoluteAxisCode::COUNT]> {
+        let mut abs_vals: [input_absinfo; AbsoluteAxisCode::COUNT] = ABS_VALS_INIT;
         self.update_abs_state(&mut abs_vals)?;
         Ok(abs_vals)
     }
 
+    /// Get the AbsInfo for each supported AbsoluteAxis
+    pub fn get_absinfo(
+        &self,
+    ) -> io::Result<impl Iterator<Item = (AbsoluteAxisCode, AbsInfo)> + '_> {
+        let raw_absinfo = self.get_abs_state()?;
+        Ok(self
+            .supported_absolute_axes()
+            .into_iter()
+            .flat_map(AttributeSetRef::iter)
+            .map(move |axes| (axes, AbsInfo(raw_absinfo[axes.0 as usize]))))
+    }
+
     /// Retrieve the current switch state directly via kernel syscall.
     #[inline]
-    pub fn get_switch_state(&self) -> io::Result<AttributeSet<SwitchType>> {
+    pub fn get_switch_state(&self) -> io::Result<AttributeSet<SwitchCode>> {
         let mut switch_vals = AttributeSet::new();
         self.update_switch_state(&mut switch_vals)?;
         Ok(switch_vals)
@@ -527,7 +492,7 @@ impl RawDevice {
 
     /// Retrieve the current LED state directly via kernel syscall.
     #[inline]
-    pub fn get_led_state(&self) -> io::Result<AttributeSet<LedType>> {
+    pub fn get_led_state(&self) -> io::Result<AttributeSet<LedCode>> {
         let mut led_vals = AttributeSet::new();
         self.update_led_state(&mut led_vals)?;
         Ok(led_vals)
@@ -537,7 +502,7 @@ impl RawDevice {
     /// If you don't already have a buffer, you probably want
     /// [`get_key_state`](Self::get_key_state) instead.
     #[inline]
-    pub fn update_key_state(&self, key_vals: &mut AttributeSet<Key>) -> io::Result<()> {
+    pub fn update_key_state(&self, key_vals: &mut AttributeSet<KeyCode>) -> io::Result<()> {
         unsafe { sys::eviocgkey(self.as_raw_fd(), key_vals.as_mut_raw_slice())? };
         Ok(())
     }
@@ -548,10 +513,10 @@ impl RawDevice {
     #[inline]
     pub fn update_abs_state(
         &self,
-        abs_vals: &mut [input_absinfo; AbsoluteAxisType::COUNT],
+        abs_vals: &mut [input_absinfo; AbsoluteAxisCode::COUNT],
     ) -> io::Result<()> {
         if let Some(supported_abs) = self.supported_absolute_axes() {
-            for AbsoluteAxisType(idx) in supported_abs.iter() {
+            for AbsoluteAxisCode(idx) in supported_abs.iter() {
                 // ignore multitouch, we'll handle that later.
                 //
                 // handling later removed. not sure what the intention of "handling that later" was
@@ -570,7 +535,7 @@ impl RawDevice {
     #[inline]
     pub fn update_switch_state(
         &self,
-        switch_vals: &mut AttributeSet<SwitchType>,
+        switch_vals: &mut AttributeSet<SwitchCode>,
     ) -> io::Result<()> {
         unsafe { sys::eviocgsw(self.as_raw_fd(), switch_vals.as_mut_raw_slice())? };
         Ok(())
@@ -580,7 +545,7 @@ impl RawDevice {
     /// If you don't already have a buffer, you probably want
     /// [`get_led_state`](Self::get_led_state) instead.
     #[inline]
-    pub fn update_led_state(&self, led_vals: &mut AttributeSet<LedType>) -> io::Result<()> {
+    pub fn update_led_state(&self, led_vals: &mut AttributeSet<LedCode>) -> io::Result<()> {
         unsafe { sys::eviocgled(self.as_raw_fd(), led_vals.as_mut_raw_slice())? };
         Ok(())
     }
@@ -697,6 +662,11 @@ impl RawDevice {
         Ok(())
     }
 
+    /// Whether the device is currently grabbed for exclusive use or not.
+    pub fn is_grabbed(&self) -> bool {
+        self.grabbed
+    }
+
     /// Send an event to the device.
     ///
     /// Events that are typically sent to devices are
@@ -704,8 +674,8 @@ impl RawDevice {
     /// [EventType::SOUND] (play a sound on the device)
     /// and [EventType::FORCEFEEDBACK] (play force feedback effects on the device, i.e. rumble).
     pub fn send_events(&mut self, events: &[InputEvent]) -> io::Result<()> {
-        let bytes = unsafe { crate::cast_to_bytes(events) };
-        self.file.write_all(bytes)
+        crate::write_events(self.fd.as_fd(), events)?;
+        Ok(())
     }
 
     /// Uploads a force feedback effect to the device.
@@ -713,57 +683,49 @@ impl RawDevice {
         let mut effect: sys::ff_effect = data.into();
         effect.id = -1;
 
-        unsafe { sys::eviocsff(self.file.as_raw_fd(), &effect)? };
+        unsafe { sys::eviocsff(self.fd.as_raw_fd(), &effect)? };
 
-        let file = self.file.try_clone()?;
+        let fd = self.fd.try_clone()?;
         let id = effect.id as u16;
 
-        Ok(FFEffect { file, id })
+        Ok(FFEffect { fd, id })
     }
 
     /// Sets the force feedback gain, i.e. how strong the force feedback effects should be for the
     /// device. A gain of 0 means no gain, whereas `u16::MAX` is the maximum gain.
     pub fn set_ff_gain(&mut self, value: u16) -> io::Result<()> {
-        let events = [InputEvent::new(
-            EventType::FORCEFEEDBACK,
-            FFEffectType::FF_GAIN.0,
-            value.into(),
-        )];
-        let bytes = unsafe { crate::cast_to_bytes(&events) };
-        self.file.write_all(bytes)?;
+        let events = [*FFEvent::new(FFEffectCode::FF_GAIN, value.into())];
+        crate::write_events(self.fd.as_fd(), &events)?;
 
         Ok(())
     }
 
     /// Enables or disables autocenter for the force feedback device.
     pub fn set_ff_autocenter(&mut self, value: u16) -> io::Result<()> {
-        let events = [InputEvent::new(
-            EventType::FORCEFEEDBACK,
-            FFEffectType::FF_AUTOCENTER.0,
-            value.into(),
-        )];
-        let bytes = unsafe { crate::cast_to_bytes(&events) };
-        self.file.write_all(bytes)?;
+        let events = [*FFEvent::new(FFEffectCode::FF_AUTOCENTER, value.into())];
+        crate::write_events(self.fd.as_fd(), &events)?;
 
         Ok(())
     }
 }
 
-impl AsRawFd for RawDevice {
-    fn as_raw_fd(&self) -> RawFd {
-        self.file.as_raw_fd()
+impl AsFd for RawDevice {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.fd.as_fd()
     }
 }
 
-/// A copy of the unstable Vec::spare_capacity_mut
-#[inline]
-pub(crate) fn vec_spare_capacity_mut<T>(v: &mut Vec<T>) -> &mut [mem::MaybeUninit<T>] {
-    let (len, cap) = (v.len(), v.capacity());
-    unsafe {
-        std::slice::from_raw_parts_mut(
-            v.as_mut_ptr().add(len) as *mut mem::MaybeUninit<T>,
-            cap - len,
-        )
+impl AsRawFd for RawDevice {
+    fn as_raw_fd(&self) -> RawFd {
+        self.fd.as_raw_fd()
+    }
+}
+
+impl TryFrom<File> for RawDevice {
+    type Error = io::Error;
+
+    fn try_from(file: File) -> Result<Self, Self::Error> {
+        Self::from_fd(file.into())
     }
 }
 
@@ -777,6 +739,7 @@ pub fn enumerate() -> EnumerateDevices {
     }
 }
 
+/// An iterator over currently connected evdev devices.
 pub struct EnumerateDevices {
     readdir: Option<std::fs::ReadDir>,
 }
@@ -803,11 +766,8 @@ impl Iterator for EnumerateDevices {
 mod tokio_stream {
     use super::*;
 
-    use tokio_1 as tokio;
-
-    use futures_core::{ready, Stream};
-    use std::pin::Pin;
-    use std::task::{Context, Poll};
+    use std::future::poll_fn;
+    use std::task::{ready, Context, Poll};
     use tokio::io::unix::AsyncFd;
 
     /// An asynchronous stream of input events.
@@ -851,7 +811,7 @@ mod tokio_stream {
             'outer: loop {
                 if let Some(&ev) = self.device.get_ref().event_buf.get(self.index) {
                     self.index += 1;
-                    return Poll::Ready(Ok(InputEvent(ev)));
+                    return Poll::Ready(Ok(InputEvent::from(ev)));
                 }
 
                 self.device.get_mut().event_buf.clear();
@@ -873,26 +833,16 @@ mod tokio_stream {
         }
     }
 
-    impl Stream for EventStream {
+    #[cfg(feature = "stream-trait")]
+    impl futures_core::Stream for EventStream {
         type Item = io::Result<InputEvent>;
-        fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        fn poll_next(
+            self: std::pin::Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<Option<Self::Item>> {
             self.get_mut().poll_event(cx).map(Some)
         }
     }
-
-    // version of futures_util::future::poll_fn
-    pub(crate) fn poll_fn<T, F: FnMut(&mut Context<'_>) -> Poll<T> + Unpin>(f: F) -> PollFn<F> {
-        PollFn(f)
-    }
-    pub(crate) struct PollFn<F>(F);
-    impl<T, F: FnMut(&mut Context<'_>) -> Poll<T> + Unpin> std::future::Future for PollFn<F> {
-        type Output = T;
-        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<T> {
-            (self.get_mut().0)(cx)
-        }
-    }
 }
-#[cfg(feature = "tokio")]
-pub(crate) use tokio_stream::poll_fn;
 #[cfg(feature = "tokio")]
 pub use tokio_stream::EventStream;

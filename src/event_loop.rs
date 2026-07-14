@@ -98,7 +98,7 @@ pub fn run(
                         if wrapper.is_keyboard
                             && ev.event_type() == evdev::EventType::KEY
                             && ev.value() == 1
-                            && ev.code() == evdev::Key::KEY_R.code()
+                            && ev.code() == evdev::KeyCode::KEY_R.0
                             && wrapper.ctrl_pressed
                             && wrapper.alt_pressed
                         {

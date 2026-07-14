@@ -1,5 +1,5 @@
 pkgname=libinput-rs
-pkgver=1.0.0
+pkgver=0.1.1
 pkgrel=2
 pkgdesc="Rust bindings and utilities for libinput"
 arch=('x86_64')

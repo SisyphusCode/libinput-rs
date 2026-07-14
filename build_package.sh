@@ -2,7 +2,7 @@
 set -e
 
 echo "Parsing project specifications..."
-VERSION="0.1.0"
+VERSION="0.1.1"
 ARCH=$(uname -m)
 
 echo "Preparing local build tree structures..."

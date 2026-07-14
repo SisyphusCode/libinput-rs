@@ -12,7 +12,7 @@
 [package]
 edition = "2021"
 name = "defmt"
-version = "1.1.0"
+version = "1.1.1"
 authors = ["The Knurling-rs developers"]
 build = "build.rs"
 links = "defmt"
@@ -84,7 +84,7 @@ path = "tests/ui_logs_off.rs"
 version = "1"
 
 [dependencies.defmt-macros]
-version = "=1.1.0"
+version = "=1.1.1"
 
 [dev-dependencies.rustc_version]
 version = "0.4"

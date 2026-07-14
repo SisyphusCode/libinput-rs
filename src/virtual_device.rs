@@ -1,32 +1,31 @@
-use evdev::{uinput::VirtualDeviceBuilder, InputEvent, Key, RelativeAxisType};
+use evdev::uinput::VirtualDevice as EvdevVirtualDevice;
+use evdev::{AttributeSet, InputEvent, KeyCode, RelativeAxisCode};
 use std::error::Error;
 use log::info;
 
 pub struct VirtualDevice {
-    device: evdev::uinput::VirtualDevice,
+    device: EvdevVirtualDevice,
 }
 
 impl Drop for VirtualDevice {
     fn drop(&mut self) {
-        // The VirtualDevice will be automatically destroyed when dropped
         info!("Virtual input device destroyed");
     }
 }
 
 impl VirtualDevice {
     pub fn new() -> Result<Self, Box<dyn Error>> {
-        let mut keys = evdev::AttributeSet::new();
-        keys.insert(Key::BTN_LEFT);
-        keys.insert(Key::BTN_RIGHT);
-        keys.insert(Key::BTN_MIDDLE);
+        let mut keys = AttributeSet::new();
+        keys.insert(KeyCode::BTN_LEFT);
+        keys.insert(KeyCode::BTN_RIGHT);
+        keys.insert(KeyCode::BTN_MIDDLE);
 
-        let mut rel_axes = evdev::AttributeSet::new();
-        rel_axes.insert(RelativeAxisType::REL_X);
-        rel_axes.insert(RelativeAxisType::REL_Y);
-        rel_axes.insert(RelativeAxisType::REL_WHEEL);
+        let mut rel_axes = AttributeSet::new();
+        rel_axes.insert(RelativeAxisCode::REL_X);
+        rel_axes.insert(RelativeAxisCode::REL_Y);
+        rel_axes.insert(RelativeAxisCode::REL_WHEEL);
 
-        // Stripping absolute axes ensures Wayland treats this strictly as a high-speed mouse
-        let device = VirtualDeviceBuilder::new()?
+        let device = EvdevVirtualDevice::builder()?
             .name("libinput-rs Virtual Pointer")
             .with_keys(&keys)?
             .with_relative_axes(&rel_axes)?

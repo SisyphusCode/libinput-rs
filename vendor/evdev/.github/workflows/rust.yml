@@ -2,9 +2,9 @@ name: Rust
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ "master" ]
+    branches: [ "main" ]
 
 env:
   CARGO_TERM_COLOR: always
@@ -19,13 +19,15 @@ jobs:
     - name: Format
       run: cargo fmt --check
     - name: Clippy
-      run: cargo clippy
+      run: cargo clippy && cargo clippy --all-features
     - name: Build
-      run: cargo build --verbose
+      run: cargo build --verbose --all-features
     - name: Run tests
       run: cargo test --verbose
     - name: Doc
-      run: cargo doc
+      run: cargo doc --all-features
+    - name: Run device tests
+      run: sudo -E env "PATH=$PATH" cargo test --tests --features device-test
 
   cross-linux:
     runs-on: ubuntu-latest
@@ -66,3 +68,22 @@ jobs:
       run: cargo test --target ${{ matrix.target.rust }}
     - name: Doc
       run: cargo doc --target ${{ matrix.target.rust }}
+
+  freebsd:
+    runs-on: ubuntu-latest
+    name: build (FreeBSD)
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build
+      uses: vmactions/freebsd-vm@v1
+      with:
+        envs: 'RUSTFLAGS'
+        usesh: true
+        prepare: |
+          pkg install -y curl
+
+        run: |
+          curl https://sh.rustup.rs -sSf | sh -s -- --profile minimal -y
+          . "$HOME/.cargo/env"
+          cargo build --all-features
+          cargo test

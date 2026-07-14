@@ -1,21 +1,20 @@
 %global debug_package %{nil}
 Name:           libinput-rs
-Version:        0.1.0
-Release:        7%{?dist}
-Summary:        A memory-safe Rust replacement for the libinput stack
+Version:        0.1.1
+Release:        1%{?dist}
+Summary:        Companion Linux input preprocessor daemon (evdev + uinput)
 
 License:        MIT
 URL:            https://github.com/SisyphusAeolides/libinput-rs
 Source0:        %{name}-%{version}.tar.gz
 
-BuildRequires:  cargo, rust, systemd-devel, gcc
+BuildRequires:  cargo, rust, systemd-rpm-macros, gcc
 Requires:       systemd, udev
 
-
-
 %description
-A complete, high-performance optimization of the Linux input stack rewritten 
-entirely in Rust.
+libinput-rs grabs physical input devices, applies a small gesture/DWT state
+machine, and emits refined events via /dev/uinput. It is an optional companion
+that runs alongside the system libinput stack — not a libinput.so ABI replacement.
 
 %prep
 %setup -q
@@ -26,7 +25,6 @@ cargo build --release --offline --frozen
 %install
 rm -rf %{buildroot}
 mkdir -p %{buildroot}%{_bindir}
-mkdir -p %{buildroot}%{_libdir}
 mkdir -p %{buildroot}%{_sysconfdir}/libinput-rs
 mkdir -p %{buildroot}%{_unitdir}
 
@@ -37,7 +35,7 @@ install -m 0644 libinput-elan-reset.service %{buildroot}%{_unitdir}/libinput-ela
 
 %post
 %systemd_post libinput-rs.service
-udevadm control --reload-rules && udevadm trigger
+udevadm control --reload-rules && udevadm trigger || true
 
 %preun
 %systemd_preun libinput-rs.service
@@ -52,5 +50,9 @@ udevadm control --reload-rules && udevadm trigger
 %{_unitdir}/libinput-elan-reset.service
 
 %changelog
-* Mon Jun 29 2026 Sisyphus <sisyphus@sisyphuslinux.org> - 0.1.0-1
-- Initial production release replacing legacy C-input implementations.
+* Tue Jul 14 2026 Kenny Glowner <sisyphuscode@fedoraproject.org> - 0.1.1-1
+- Bump evdev 0.13 / mio 1 / nix 0.29; honest companion-daemon summary
+- Fix forge unit ExecStart path; re-vendor
+
+* Mon Jun 29 2026 Sisyphus <sisyphus@sisyphuslinux.org> - 0.1.0-7
+- Prior COPR packaging train

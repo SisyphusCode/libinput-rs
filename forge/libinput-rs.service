@@ -1,9 +1,9 @@
 [Service]
 Name = "libinput-rs"
-Description = "Memory-safe input daemon for Wayland"
+Description = "Companion input preprocessor (evdev grab + uinput); optional beside libinput"
 Type = "daemon"
-ExecStart = "/usr/local/bin/libinput-rs"
-User = "Sisyphus"
+ExecStart = "/usr/bin/libinput-rs"
+User = "root"
 Group = "input"
 
 [Dependencies]

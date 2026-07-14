@@ -1,7 +1,7 @@
 use crate::compat::input_id;
 use std::fmt;
 
-#[derive(Clone)]
+#[derive(Clone, Hash, Eq, PartialEq)]
 #[repr(transparent)]
 pub struct InputId(pub(crate) input_id);
 
@@ -54,6 +54,7 @@ impl fmt::Debug for InputId {
     }
 }
 
+/// The bus type of an [`InputId`].
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub struct BusType(pub u16);
 

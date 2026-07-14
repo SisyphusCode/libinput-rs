@@ -1,4 +1,4 @@
-use evdev::{Device, EventType, InputEvent, AbsoluteAxisType, RelativeAxisType, Key};
+use evdev::{Device, EventType, InputEvent, AbsoluteAxisCode, RelativeAxisCode, KeyCode};
 use std::error::Error;
 use std::time::{Instant, Duration};
 use std::path::PathBuf;
@@ -44,7 +44,7 @@ impl DeviceWrapper {
     pub fn new(device: Device, path: PathBuf) -> Self {
         let is_absolute = device.supported_events().contains(EventType::ABSOLUTE);
         let is_keyboard = device.supported_events().contains(EventType::KEY)
-            && device.supported_keys().is_some_and(|keys| keys.contains(Key::KEY_A));
+            && device.supported_keys().is_some_and(|keys| keys.contains(KeyCode::KEY_A));
         
         Self {
             device,
@@ -80,10 +80,10 @@ impl DeviceWrapper {
             let code = ev.code();
             let value = ev.value();
             
-            if code == Key::KEY_LEFTCTRL.code() || code == Key::KEY_RIGHTCTRL.code() {
+            if code == KeyCode::KEY_LEFTCTRL.0 || code == KeyCode::KEY_RIGHTCTRL.0 {
                 self.ctrl_pressed = value != 0;
             }
-            if code == Key::KEY_LEFTALT.code() || code == Key::KEY_RIGHTALT.code() {
+            if code == KeyCode::KEY_LEFTALT.0 || code == KeyCode::KEY_RIGHTALT.0 {
                 self.alt_pressed = value != 0;
             }
 
@@ -117,7 +117,7 @@ impl DeviceWrapper {
         // For absolute devices (touchpads), convert coordinate events into relative movements
         match ev.event_type() {
             EventType::KEY => {
-                if ev.code() == Key::BTN_TOUCH.code() {
+                if ev.code() == KeyCode::BTN_TOUCH.0 {
                     self.touch_active = ev.value() != 0;
                     if self.touch_active {
                         self.touch_start_time = Some(Instant::now());
@@ -133,9 +133,9 @@ impl DeviceWrapper {
                             if let Some(start) = self.touch_start_time {
                                 if start.elapsed() < Duration::from_millis(250) {
                                     // Emit click with proper error handling
-                                    v_device.emit_raw(InputEvent::new(EventType::KEY, Key::BTN_LEFT.code(), 1))?;
-                                    v_device.emit_raw(InputEvent::new(EventType::SYNCHRONIZATION, 0, 0))?;
-                                    v_device.emit_raw(InputEvent::new(EventType::KEY, Key::BTN_LEFT.code(), 0))?;
+                                    v_device.emit_raw(InputEvent::new(EventType::KEY.0, KeyCode::BTN_LEFT.0, 1))?;
+                                    v_device.emit_raw(InputEvent::new(EventType::SYNCHRONIZATION.0, 0, 0))?;
+                                    v_device.emit_raw(InputEvent::new(EventType::KEY.0, KeyCode::BTN_LEFT.0, 0))?;
                                 }
                             }
                         }
@@ -147,13 +147,13 @@ impl DeviceWrapper {
                         self.touch_start_time = None;
                         self.touch_fingers = 0;
                     }
-                } else if ev.code() == Key::BTN_TOOL_DOUBLETAP.code() {
+                } else if ev.code() == KeyCode::BTN_TOOL_DOUBLETAP.0 {
                     if ev.value() != 0 {
                         self.touch_fingers = 2;
                     } else {
                         self.touch_fingers = 1;
                     }
-                } else if ev.code() == Key::BTN_TOOL_TRIPLETAP.code() {
+                } else if ev.code() == KeyCode::BTN_TOOL_TRIPLETAP.0 {
                     if ev.value() != 0 {
                         self.touch_fingers = 3;
                     } else {
@@ -163,13 +163,13 @@ impl DeviceWrapper {
                 
                 // Only emit standard buttons (left, right, middle) directly
                 let mut code = ev.code();
-                if code == Key::BTN_LEFT.code() {
+                if code == KeyCode::BTN_LEFT.0 {
                     if ev.value() != 0 {
                         // Press event - map physical clickpad clicks to right/middle click based on finger count
                         if self.touch_fingers == 2 {
-                            code = Key::BTN_RIGHT.code();
+                            code = KeyCode::BTN_RIGHT.0;
                         } else if self.touch_fingers == 3 {
-                            code = Key::BTN_MIDDLE.code();
+                            code = KeyCode::BTN_MIDDLE.0;
                         }
                         self.active_click_button = Some(code);
                     } else {
@@ -181,15 +181,15 @@ impl DeviceWrapper {
                     }
                 }
                 
-                if code == Key::BTN_LEFT.code() || code == Key::BTN_RIGHT.code() || code == Key::BTN_MIDDLE.code() {
-                    v_device.emit_raw(InputEvent::new(EventType::KEY, code, ev.value()))?;
+                if code == KeyCode::BTN_LEFT.0 || code == KeyCode::BTN_RIGHT.0 || code == KeyCode::BTN_MIDDLE.0 {
+                    v_device.emit_raw(InputEvent::new(EventType::KEY.0, code, ev.value()))?;
                 }
             }
             EventType::ABSOLUTE => {
                 let code = ev.code();
                 
                 // Only update last_movement_time when actual movement coordinates are received
-                if code == AbsoluteAxisType::ABS_X.0 || code == AbsoluteAxisType::ABS_Y.0 {
+                if code == AbsoluteAxisCode::ABS_X.0 || code == AbsoluteAxisCode::ABS_Y.0 {
                     // Only reset tracking if movement has stalled for more than 50ms
                     if let Some(last_time) = self.last_movement_time {
                         if last_time.elapsed() > Duration::from_millis(50) {
@@ -200,13 +200,13 @@ impl DeviceWrapper {
                     self.last_movement_time = Some(Instant::now());
                 }
 
-                if code == AbsoluteAxisType::ABS_X.0 {
+                if code == AbsoluteAxisCode::ABS_X.0 {
                     let val = ev.value();
                     if let Some(prev_x) = self.last_x {
                         self.current_dx += val - prev_x;
                     }
                     self.last_x = Some(val);
-                } else if code == AbsoluteAxisType::ABS_Y.0 {
+                } else if code == AbsoluteAxisCode::ABS_Y.0 {
                     let val = ev.value();
                     if let Some(prev_y) = self.last_y {
                         self.current_dy += val - prev_y;
@@ -243,16 +243,14 @@ impl DeviceWrapper {
                             self.remainder_y = total_y - emit_y as f32;
 
                             if emit_x != 0 {
-                                v_device.emit_raw(InputEvent::new(
-                                    EventType::RELATIVE,
-                                    RelativeAxisType::REL_X.0,
+                                v_device.emit_raw(InputEvent::new(EventType::RELATIVE.0,
+                                    RelativeAxisCode::REL_X.0,
                                     emit_x,
                                 ))?;
                             }
                             if emit_y != 0 {
-                                v_device.emit_raw(InputEvent::new(
-                                    EventType::RELATIVE,
-                                    RelativeAxisType::REL_Y.0,
+                                v_device.emit_raw(InputEvent::new(EventType::RELATIVE.0,
+                                    RelativeAxisCode::REL_Y.0,
                                     emit_y,
                                 ))?;
                             }
@@ -270,9 +268,8 @@ impl DeviceWrapper {
                                 if config.natural_scrolling {
                                     final_wheel = -final_wheel;
                                 }
-                                v_device.emit_raw(InputEvent::new(
-                                    EventType::RELATIVE,
-                                    RelativeAxisType::REL_WHEEL.0,
+                                v_device.emit_raw(InputEvent::new(EventType::RELATIVE.0,
+                                    RelativeAxisCode::REL_WHEEL.0,
                                     final_wheel,
                                 ))?;
                             }
@@ -332,7 +329,7 @@ pub fn try_open_device(path: &std::path::Path) -> Option<DeviceWrapper> {
         
         let is_pointer = name.contains("touchpad") || name.contains("trackpoint") || name.contains("elan") || name.contains("synaptics") || name.contains("mouse");
         let is_keyboard = device.supported_events().contains(EventType::KEY)
-            && device.supported_keys().is_some_and(|keys| keys.contains(Key::KEY_A));
+            && device.supported_keys().is_some_and(|keys| keys.contains(KeyCode::KEY_A));
         
         if is_pointer {
             info!("Found target pointer hardware: {} at {:?}", name, path);
