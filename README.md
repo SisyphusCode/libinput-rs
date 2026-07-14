@@ -28,7 +28,7 @@ You can build and install the daemon locally using the provided RPM packaging sc
 
 ```bash
 # Clone the repository
-git clone https://github.com/SisyphusCode/libinput-rs.git
+git clone https://github.com/SisyphusAeolides/libinput-rs.git
 cd libinput-rs
 
 # Build and create RPM
