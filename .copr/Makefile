@@ -14,7 +14,8 @@ srpm:
 	    --exclude='./target' \
 	    --exclude='./build_workspace' \
 	    -czf $(outdir)/libinput-rs-0.1.1.tar.gz \
-	    ./vendor ./.cargo ./src ./Cargo.toml ./Cargo.lock ./systemd ./libinput-elan-reset.service ./libinput-rs.spec ./README.md ./build_package.sh
+	    ./vendor ./.cargo ./src ./Cargo.toml ./Cargo.lock ./systemd ./forge \
+	    ./libinput-elan-reset.service ./libinput-rs.spec ./README.md ./build_package.sh
 	@echo "Building SRPM..."
 	rpmbuild -bs $(spec) \
 	    --define "_sourcedir $(outdir)" \

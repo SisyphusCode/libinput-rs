@@ -1,7 +1,7 @@
 %global debug_package %{nil}
 Name:           libinput-rs
 Version:        0.1.1
-Release:        2%{?dist}
+Release:        3%{?dist}
 Summary:        Companion Linux input preprocessor daemon (evdev + uinput)
 
 License:        MIT
@@ -63,6 +63,9 @@ fi
 %{_datadir}/libinput-rs/forge/libinput-rs.forge.toml
 
 %changelog
+* Wed Jul 15 2026 Kenny Glowner <sisyphuscode@fedoraproject.org> - 0.1.1-3
+- Include forge/ in COPR source tarball (fix missing libinput-rs.forge.toml)
+
 * Wed Jul 15 2026 Kenny Glowner <sisyphuscode@fedoraproject.org> - 0.1.1-2
 - Ship forge unit and %post install into /etc/forge/units/ when forged is present
 
