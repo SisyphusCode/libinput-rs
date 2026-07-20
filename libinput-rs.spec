@@ -6,7 +6,8 @@ Summary:        Companion Linux input preprocessor daemon (evdev + uinput)
 
 License:        MIT
 URL:            https://github.com/SisyphusAeolides/libinput-rs
-Source0:        %{name}-%{version}.tar.gz
+# Points directly to the GitHub tag tarball without the 'v' prefix
+Source0:        https://github.com/SisyphusAeolides/libinput-rs/archive/%{version}/%{name}-%{version}.tar.gz
 
 BuildRequires:  cargo, rust, systemd-rpm-macros, gcc
 Requires:       systemd, udev
