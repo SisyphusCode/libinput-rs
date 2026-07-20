@@ -8,7 +8,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::os::unix::io::RawFd;
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use evdev::{AbsoluteAxisCode, Device, EventType, InputEvent, KeyCode, RelativeAxisCode};
 use nix::sys::inotify::{AddWatchFlags, InitFlags, Inotify};
@@ -17,7 +17,7 @@ use crate::config::InputConfig;
 use crate::ffi_types::{
     EventPayload, GestureEvent, KeyboardKeyEvent, LibinputContext, LibinputDevice,
     LibinputEvent, LibinputEventType, PointerAxisEvent, PointerButtonEvent,
-    PointerMotionEvent, TouchEvent,
+    PointerMotionEvent,
 };
 
 // ---------------------------------------------------------------------------
@@ -156,6 +156,16 @@ impl TrackedDevice {
         let dy = active[1].y - active[0].y;
         dy.atan2(dx).to_degrees()
     }
+}
+
+// ---------------------------------------------------------------------------
+// Helper: convert a SystemTime to microseconds since UNIX epoch
+// ---------------------------------------------------------------------------
+
+fn systime_to_usec(t: SystemTime) -> u64 {
+    t.duration_since(UNIX_EPOCH)
+        .unwrap_or(Duration::ZERO)
+        .as_micros() as u64
 }
 
 // ---------------------------------------------------------------------------
@@ -305,8 +315,7 @@ impl BackendState {
             let global_typing = self.global_typing_time;
 
             for ev in &batch {
-                let ts_usec = (ev.timestamp().tv_sec as u64) * 1_000_000
-                    + ev.timestamp().tv_usec as u64;
+                let ts_usec = systime_to_usec(ev.timestamp());
 
                 // ---- Keyboard device ----
                 if is_kbd && !is_abs {
