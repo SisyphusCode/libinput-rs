@@ -23,7 +23,7 @@ When forged is installed, %post may drop a forge unit into /etc/forge/units/.
 %setup -q
 
 %build
-cargo build --release --offline --frozen
+cargo build --release --offline --frozen --bin libinput-rs
 
 %install
 rm -rf %{buildroot}
