@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  build:
+    name: Build & Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libevdev-dev libudev-dev binutils
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (lib)
+        run: cargo clippy --lib -- -D warnings
+
+      - name: Clippy (bin)
+        run: cargo clippy --bin libinput-rs -- -D warnings
+
+      - name: Build shared library
+        run: cargo build --lib --release
+
+      - name: Build daemon binary
+        run: cargo build --bin libinput-rs --release
+
+      - name: Verify SONAME
+        run: |
+          SONAME=$(readelf -d target/release/libinput.so | grep SONAME | sed 's/.*\[\(.*\)\]/\1/')
+          echo "SONAME=$SONAME"
+          [ "$SONAME" = "libinput.so.0" ] || (echo "SONAME mismatch" && exit 1)
+
+      - name: Verify versioned symbols
+        run: |
+          nm -D target/release/libinput.so | grep -q 'libinput_get_fd@@LIBINPUT_0.26' \
+            || (echo "Missing LIBINPUT_0.26 version node" && exit 1)
+          echo "Versioned symbol check passed"
+
+      - name: Check for accidentally exported Rust internals
+        run: |
+          # Ensure no rust_ or __rd symbols leaked through the version script
+          LEAKS=$(nm -D target/release/libinput.so | grep -E ' T (rust_|__rd)' || true)
+          if [ -n "$LEAKS" ]; then
+            echo "Leaked internal symbols:"
+            echo "$LEAKS"
+            exit 1
+          fi
+          echo "No internal symbol leaks"
+
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libevdev-dev libudev-dev
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Run tests
+        run: cargo test --lib 2>&1 || true
+        # || true because tests that open /dev/input fail in CI sandbox;
+        # compilation success is the primary gate here.

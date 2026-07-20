@@ -1,8 +1,4 @@
 //! Opaque C-compatible types exposed through the libinput ABI.
-//!
-//! Each public struct is held behind a raw pointer on the C side.
-//! Callers receive *mut T from creation functions and pass it back;
-//! we reconstruct Box<T> only when we need to free or access the value.
 
 use std::collections::VecDeque;
 use std::os::unix::io::RawFd;
@@ -13,19 +9,16 @@ use crate::backend::BackendState;
 use crate::config::InputConfig;
 
 // ---------------------------------------------------------------------------
-// libinput_interface — caller-supplied open/close callbacks
+// libinput_interface
 // ---------------------------------------------------------------------------
 
 #[repr(C)]
 pub struct LibinputInterface {
-    pub open_restricted:  Option<unsafe extern "C" fn(
-        path:      *const libc::c_char,
-        flags:     libc::c_int,
-        user_data: *mut libc::c_void,
+    pub open_restricted: Option<unsafe extern "C" fn(
+        path: *const libc::c_char, flags: libc::c_int, user_data: *mut libc::c_void,
     ) -> libc::c_int>,
     pub close_restricted: Option<unsafe extern "C" fn(
-        fd:        libc::c_int,
-        user_data: *mut libc::c_void,
+        fd: libc::c_int, user_data: *mut libc::c_void,
     )>,
 }
 
@@ -37,36 +30,36 @@ pub struct LibinputInterface {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(non_camel_case_types, dead_code)]
 pub enum LibinputEventType {
-    LIBINPUT_EVENT_NONE                           = 0,
-    LIBINPUT_EVENT_DEVICE_ADDED                   = 1,
-    LIBINPUT_EVENT_DEVICE_REMOVED                 = 2,
-    LIBINPUT_EVENT_KEYBOARD_KEY                   = 300,
-    LIBINPUT_EVENT_POINTER_MOTION                 = 400,
-    LIBINPUT_EVENT_POINTER_MOTION_ABSOLUTE        = 401,
-    LIBINPUT_EVENT_POINTER_BUTTON                 = 402,
-    LIBINPUT_EVENT_POINTER_AXIS                   = 403,
-    LIBINPUT_EVENT_POINTER_SCROLL_WHEEL           = 404,
-    LIBINPUT_EVENT_POINTER_SCROLL_FINGER          = 405,
-    LIBINPUT_EVENT_POINTER_SCROLL_CONTINUOUS      = 406,
-    LIBINPUT_EVENT_TOUCH_DOWN                     = 500,
-    LIBINPUT_EVENT_TOUCH_UP                       = 501,
-    LIBINPUT_EVENT_TOUCH_MOTION                   = 502,
-    LIBINPUT_EVENT_TOUCH_CANCEL                   = 503,
-    LIBINPUT_EVENT_TOUCH_FRAME                    = 504,
-    LIBINPUT_EVENT_GESTURE_SWIPE_BEGIN            = 800,
-    LIBINPUT_EVENT_GESTURE_SWIPE_UPDATE           = 801,
-    LIBINPUT_EVENT_GESTURE_SWIPE_END              = 802,
-    LIBINPUT_EVENT_GESTURE_PINCH_BEGIN            = 803,
-    LIBINPUT_EVENT_GESTURE_PINCH_UPDATE           = 804,
-    LIBINPUT_EVENT_GESTURE_PINCH_END              = 805,
-    LIBINPUT_EVENT_SWITCH_TOGGLE                  = 900,
-    LIBINPUT_EVENT_TABLET_TOOL_AXIS               = 600,
-    LIBINPUT_EVENT_TABLET_TOOL_PROXIMITY          = 601,
-    LIBINPUT_EVENT_TABLET_TOOL_TIP                = 602,
-    LIBINPUT_EVENT_TABLET_TOOL_BUTTON             = 603,
-    LIBINPUT_EVENT_TABLET_PAD_BUTTON              = 700,
-    LIBINPUT_EVENT_TABLET_PAD_RING                = 701,
-    LIBINPUT_EVENT_TABLET_PAD_STRIP               = 702,
+    LIBINPUT_EVENT_NONE                      = 0,
+    LIBINPUT_EVENT_DEVICE_ADDED              = 1,
+    LIBINPUT_EVENT_DEVICE_REMOVED            = 2,
+    LIBINPUT_EVENT_KEYBOARD_KEY              = 300,
+    LIBINPUT_EVENT_POINTER_MOTION            = 400,
+    LIBINPUT_EVENT_POINTER_MOTION_ABSOLUTE   = 401,
+    LIBINPUT_EVENT_POINTER_BUTTON            = 402,
+    LIBINPUT_EVENT_POINTER_AXIS              = 403,
+    LIBINPUT_EVENT_POINTER_SCROLL_WHEEL      = 404,
+    LIBINPUT_EVENT_POINTER_SCROLL_FINGER     = 405,
+    LIBINPUT_EVENT_POINTER_SCROLL_CONTINUOUS = 406,
+    LIBINPUT_EVENT_TOUCH_DOWN                = 500,
+    LIBINPUT_EVENT_TOUCH_UP                  = 501,
+    LIBINPUT_EVENT_TOUCH_MOTION              = 502,
+    LIBINPUT_EVENT_TOUCH_CANCEL              = 503,
+    LIBINPUT_EVENT_TOUCH_FRAME               = 504,
+    LIBINPUT_EVENT_GESTURE_SWIPE_BEGIN       = 800,
+    LIBINPUT_EVENT_GESTURE_SWIPE_UPDATE      = 801,
+    LIBINPUT_EVENT_GESTURE_SWIPE_END         = 802,
+    LIBINPUT_EVENT_GESTURE_PINCH_BEGIN       = 803,
+    LIBINPUT_EVENT_GESTURE_PINCH_UPDATE      = 804,
+    LIBINPUT_EVENT_GESTURE_PINCH_END         = 805,
+    LIBINPUT_EVENT_SWITCH_TOGGLE             = 900,
+    LIBINPUT_EVENT_TABLET_TOOL_AXIS          = 600,
+    LIBINPUT_EVENT_TABLET_TOOL_PROXIMITY     = 601,
+    LIBINPUT_EVENT_TABLET_TOOL_TIP           = 602,
+    LIBINPUT_EVENT_TABLET_TOOL_BUTTON        = 603,
+    LIBINPUT_EVENT_TABLET_PAD_BUTTON         = 700,
+    LIBINPUT_EVENT_TABLET_PAD_RING           = 701,
+    LIBINPUT_EVENT_TABLET_PAD_STRIP          = 702,
 }
 
 // ---------------------------------------------------------------------------
@@ -75,11 +68,11 @@ pub enum LibinputEventType {
 
 #[derive(Debug, Clone)]
 pub struct PointerMotionEvent {
-    pub time_usec:   u64,
-    pub dx:          f64,
-    pub dy:          f64,
-    pub dx_unaccel:  f64,
-    pub dy_unaccel:  f64,
+    pub time_usec:  u64,
+    pub dx:         f64,
+    pub dy:         f64,
+    pub dx_unaccel: f64,
+    pub dy_unaccel: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -179,18 +172,19 @@ pub struct LibinputEvent {
 
 #[allow(dead_code)]
 pub struct LibinputDevice {
-    pub name:         String,
-    pub sysname:      String,
-    pub devnode:      String,
-    pub vendor_id:    u32,
-    pub product_id:   u32,
-    pub has_keyboard: bool,
-    pub has_pointer:  bool,
-    pub has_touch:    bool,
-    pub has_gesture:  bool,
-    pub has_switch:   bool,
-    pub has_tablet:   bool,
+    pub name:             String,
+    pub sysname:          String,
+    pub devnode:          String,
+    pub vendor_id:        u32,
+    pub product_id:       u32,
+    pub has_keyboard:     bool,
+    pub has_pointer:      bool,
+    pub has_touch:        bool,
+    pub has_gesture:      bool,
+    pub has_switch:       bool,
+    pub has_tablet:       bool,
     pub tap_enabled:      bool,
+    pub tap_button_map:   u32,   // 0=LRM 1=LMR
     pub natural_scroll:   bool,
     pub accel_speed:      f64,
     pub accel_profile:    u32,
@@ -209,18 +203,19 @@ unsafe impl Send for LibinputDevice {}
 impl LibinputDevice {
     pub fn new(name: &str, devnode: &str) -> Self {
         Self {
-            name:          name.to_string(),
-            sysname:       String::new(),
-            devnode:       devnode.to_string(),
-            vendor_id:     0,
-            product_id:    0,
-            has_keyboard:  false,
-            has_pointer:   true,
-            has_touch:     false,
-            has_gesture:   false,
-            has_switch:    false,
-            has_tablet:    false,
+            name:             name.to_string(),
+            sysname:          String::new(),
+            devnode:          devnode.to_string(),
+            vendor_id:        0,
+            product_id:       0,
+            has_keyboard:     false,
+            has_pointer:      true,
+            has_touch:        false,
+            has_gesture:      false,
+            has_switch:       false,
+            has_tablet:       false,
             tap_enabled:      true,
+            tap_button_map:   0,
             natural_scroll:   true,
             accel_speed:      0.0,
             accel_profile:    1,
@@ -258,11 +253,8 @@ pub struct LibinputContext {
     pub seat:        LibinputSeat,
     pub refcount:    AtomicI32,
     pub log_handler: Option<unsafe extern "C" fn(
-        ctx:      *mut LibinputContext,
-        priority: u32,
-        msg:      *const libc::c_char,
+        ctx: *mut LibinputContext, priority: u32, msg: *const libc::c_char,
     )>,
-    /// The live evdev backend — wrapped in Mutex for interior mutability
     pub backend: Mutex<BackendState>,
 }
 
@@ -275,7 +267,6 @@ impl LibinputContext {
         user_data: *mut libc::c_void,
     ) -> Self {
         let efd = unsafe { libc::eventfd(0, libc::EFD_NONBLOCK | libc::EFD_CLOEXEC) };
-        let config = InputConfig::default();
         Self {
             interface,
             user_data,
@@ -288,33 +279,24 @@ impl LibinputContext {
             },
             refcount: AtomicI32::new(1),
             log_handler: None,
-            backend: Mutex::new(BackendState::new(config)),
+            backend: Mutex::new(BackendState::new(InputConfig::default())),
         }
     }
 
     pub fn signal_fd(&self) {
         let val: u64 = 1;
         unsafe {
-            libc::write(
-                self.event_fd,
-                &val as *const u64 as *const libc::c_void,
-                8,
-            );
+            libc::write(self.event_fd, &val as *const u64 as *const libc::c_void, 8);
         }
     }
 
     pub fn drain_fd(&self) {
         let mut buf: u64 = 0;
         unsafe {
-            libc::read(
-                self.event_fd,
-                &mut buf as *mut u64 as *mut libc::c_void,
-                8,
-            );
+            libc::read(self.event_fd, &mut buf as *mut u64 as *mut libc::c_void, 8);
         }
     }
 
-    pub fn ref_count(&self) -> i32 { self.refcount.load(Ordering::SeqCst) }
     pub fn inc_ref(&self) { self.refcount.fetch_add(1, Ordering::SeqCst); }
     pub fn dec_ref(&self) -> i32 { self.refcount.fetch_sub(1, Ordering::SeqCst) - 1 }
 }
