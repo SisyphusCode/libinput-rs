@@ -7,6 +7,10 @@
 use std::collections::VecDeque;
 use std::os::unix::io::RawFd;
 use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::Mutex;
+
+use crate::backend::BackendState;
+use crate::config::InputConfig;
 
 // ---------------------------------------------------------------------------
 // libinput_interface — caller-supplied open/close callbacks
@@ -71,11 +75,11 @@ pub enum LibinputEventType {
 
 #[derive(Debug, Clone)]
 pub struct PointerMotionEvent {
-    pub time_usec: u64,
-    pub dx:        f64,
-    pub dy:        f64,
-    pub dx_unaccel: f64,
-    pub dy_unaccel: f64,
+    pub time_usec:   u64,
+    pub dx:          f64,
+    pub dy:          f64,
+    pub dx_unaccel:  f64,
+    pub dy_unaccel:  f64,
 }
 
 #[derive(Debug, Clone)]
@@ -89,23 +93,23 @@ pub struct PointerMotionAbsoluteEvent {
 pub struct PointerButtonEvent {
     pub time_usec: u64,
     pub button:    u32,
-    pub state:     u32, // 0 = released, 1 = pressed
+    pub state:     u32,
 }
 
 #[derive(Debug, Clone)]
 pub struct PointerAxisEvent {
-    pub time_usec:    u64,
-    pub axis:         u32,
-    pub value:        f64,
+    pub time_usec:      u64,
+    pub axis:           u32,
+    pub value:          f64,
     pub value_discrete: i32,
-    pub source:       u32, // wheel=1, finger=2, continuous=4
+    pub source:         u32,
 }
 
 #[derive(Debug, Clone)]
 pub struct KeyboardKeyEvent {
     pub time_usec: u64,
     pub key:       u32,
-    pub state:     u32, // 0 = released, 1 = pressed
+    pub state:     u32,
 }
 
 #[derive(Debug, Clone)]
@@ -119,13 +123,13 @@ pub struct TouchEvent {
 
 #[derive(Debug, Clone)]
 pub struct GestureEvent {
-    pub time_usec:   u64,
+    pub time_usec:    u64,
     pub finger_count: i32,
-    pub dx:          f64,
-    pub dy:          f64,
-    pub scale:       f64,
-    pub angle:       f64,
-    pub cancelled:   bool,
+    pub dx:           f64,
+    pub dy:           f64,
+    pub scale:        f64,
+    pub angle:        f64,
+    pub cancelled:    bool,
 }
 
 #[derive(Debug, Clone)]
@@ -165,9 +169,7 @@ pub enum EventPayload {
 pub struct LibinputEvent {
     pub event_type: LibinputEventType,
     pub payload:    EventPayload,
-    /// Back-pointer to the owning context (not owned — raw borrow)
     pub context:    *mut LibinputContext,
-    /// Back-pointer to the originating device (not owned — raw borrow)
     pub device:     *mut LibinputDevice,
 }
 
@@ -177,32 +179,32 @@ pub struct LibinputEvent {
 
 #[allow(dead_code)]
 pub struct LibinputDevice {
-    pub name:          String,
-    pub sysname:       String,
-    pub devnode:       String,
-    pub vendor_id:     u32,
-    pub product_id:    u32,
-    // capability flags
-    pub has_keyboard:  bool,
-    pub has_pointer:   bool,
-    pub has_touch:     bool,
-    pub has_gesture:   bool,
-    pub has_switch:    bool,
-    pub has_tablet:    bool,
-    // config state
-    pub tap_enabled:       bool,
-    pub natural_scroll:    bool,
-    pub accel_speed:       f64,
-    pub accel_profile:     u32,
-    pub left_handed:       bool,
-    pub scroll_method:     u32,
-    pub click_method:      u32,
-    pub middle_emulation:  bool,
-    pub dwt_enabled:       bool,
-    pub calibration:       [f32; 6],
-    // internal ref count
-    pub refcount: AtomicI32,
+    pub name:         String,
+    pub sysname:      String,
+    pub devnode:      String,
+    pub vendor_id:    u32,
+    pub product_id:   u32,
+    pub has_keyboard: bool,
+    pub has_pointer:  bool,
+    pub has_touch:    bool,
+    pub has_gesture:  bool,
+    pub has_switch:   bool,
+    pub has_tablet:   bool,
+    pub tap_enabled:      bool,
+    pub natural_scroll:   bool,
+    pub accel_speed:      f64,
+    pub accel_profile:    u32,
+    pub left_handed:      bool,
+    pub scroll_method:    u32,
+    pub click_method:     u32,
+    pub middle_emulation: bool,
+    pub dwt_enabled:      bool,
+    pub calibration:      [f32; 6],
+    pub refcount:         AtomicI32,
+    pub user_data:        *mut libc::c_void,
 }
+
+unsafe impl Send for LibinputDevice {}
 
 impl LibinputDevice {
     pub fn new(name: &str, devnode: &str) -> Self {
@@ -218,17 +220,18 @@ impl LibinputDevice {
             has_gesture:   false,
             has_switch:    false,
             has_tablet:    false,
-            tap_enabled:       true,
-            natural_scroll:    true,
-            accel_speed:       0.0,
-            accel_profile:     1, // adaptive
-            left_handed:       false,
-            scroll_method:     2, // two-finger
-            click_method:      1, // button areas
-            middle_emulation:  false,
-            dwt_enabled:       true,
-            calibration:       [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
-            refcount:      AtomicI32::new(1),
+            tap_enabled:      true,
+            natural_scroll:   true,
+            accel_speed:      0.0,
+            accel_profile:    1,
+            left_handed:      false,
+            scroll_method:    2,
+            click_method:     1,
+            middle_emulation: false,
+            dwt_enabled:      true,
+            calibration:      [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+            refcount:         AtomicI32::new(1),
+            user_data:        std::ptr::null_mut(),
         }
     }
 }
@@ -247,32 +250,32 @@ pub struct LibinputSeat {
 // ---------------------------------------------------------------------------
 
 pub struct LibinputContext {
-    pub interface:  *const LibinputInterface,
-    pub user_data:  *mut libc::c_void,
-    /// epoll/eventfd used to signal readiness to the caller
-    pub event_fd:   RawFd,
-    /// Pending events not yet consumed by libinput_get_event()
+    pub interface:   *const LibinputInterface,
+    pub user_data:   *mut libc::c_void,
+    pub event_fd:    RawFd,
     pub event_queue: VecDeque<LibinputEvent>,
-    /// Owned devices
-    pub devices:    Vec<*mut LibinputDevice>,
-    /// Seat
-    pub seat:       LibinputSeat,
-    pub refcount:   AtomicI32,
-    /// Log handler
+    pub devices:     Vec<*mut LibinputDevice>,
+    pub seat:        LibinputSeat,
+    pub refcount:    AtomicI32,
     pub log_handler: Option<unsafe extern "C" fn(
         ctx:      *mut LibinputContext,
         priority: u32,
         msg:      *const libc::c_char,
     )>,
+    /// The live evdev backend — wrapped in Mutex for interior mutability
+    pub backend: Mutex<BackendState>,
 }
+
+unsafe impl Send for LibinputContext {}
+unsafe impl Sync for LibinputContext {}
 
 impl LibinputContext {
     pub fn new(
         interface: *const LibinputInterface,
         user_data: *mut libc::c_void,
     ) -> Self {
-        // Create an eventfd so the caller can poll(2) our fd
         let efd = unsafe { libc::eventfd(0, libc::EFD_NONBLOCK | libc::EFD_CLOEXEC) };
+        let config = InputConfig::default();
         Self {
             interface,
             user_data,
@@ -285,10 +288,10 @@ impl LibinputContext {
             },
             refcount: AtomicI32::new(1),
             log_handler: None,
+            backend: Mutex::new(BackendState::new(config)),
         }
     }
 
-    /// Signal the eventfd so poll()/select() wakes up
     pub fn signal_fd(&self) {
         let val: u64 = 1;
         unsafe {
@@ -300,7 +303,6 @@ impl LibinputContext {
         }
     }
 
-    /// Drain one count from the eventfd after wakeup
     pub fn drain_fd(&self) {
         let mut buf: u64 = 0;
         unsafe {
@@ -312,17 +314,9 @@ impl LibinputContext {
         }
     }
 
-    pub fn ref_count(&self) -> i32 {
-        self.refcount.load(Ordering::SeqCst)
-    }
-
-    pub fn inc_ref(&self) {
-        self.refcount.fetch_add(1, Ordering::SeqCst);
-    }
-
-    pub fn dec_ref(&self) -> i32 {
-        self.refcount.fetch_sub(1, Ordering::SeqCst) - 1
-    }
+    pub fn ref_count(&self) -> i32 { self.refcount.load(Ordering::SeqCst) }
+    pub fn inc_ref(&self) { self.refcount.fetch_add(1, Ordering::SeqCst); }
+    pub fn dec_ref(&self) -> i32 { self.refcount.fetch_sub(1, Ordering::SeqCst) - 1 }
 }
 
 impl Drop for LibinputContext {
@@ -330,7 +324,6 @@ impl Drop for LibinputContext {
         if self.event_fd >= 0 {
             unsafe { libc::close(self.event_fd); }
         }
-        // Free owned devices
         for dev_ptr in self.devices.drain(..) {
             if !dev_ptr.is_null() {
                 unsafe { drop(Box::from_raw(dev_ptr)); }
