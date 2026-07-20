@@ -33,7 +33,10 @@ pub fn run(
     }
 
     let inotify = Inotify::init(InitFlags::IN_NONBLOCK)?;
-    inotify.add_watch("/dev/input", AddWatchFlags::IN_CREATE | AddWatchFlags::IN_ATTRIB)?;
+    inotify.add_watch(
+        "/dev/input",
+        AddWatchFlags::IN_CREATE | AddWatchFlags::IN_ATTRIB,
+    )?;
     let inotify_fd = inotify.as_fd().as_raw_fd();
     let inotify_token = usize::MAX;
     poll.registry().register(

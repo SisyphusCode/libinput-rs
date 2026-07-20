@@ -1,15 +1,15 @@
-use evdev::{Device, EventType, InputEvent, AbsoluteAxisCode, RelativeAxisCode, KeyCode};
-use std::error::Error;
-use std::time::{Instant, Duration};
-use std::path::PathBuf;
+use evdev::{AbsoluteAxisCode, Device, EventType, InputEvent, KeyCode, RelativeAxisCode};
 use log::{info, warn};
+use std::error::Error;
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 pub struct DeviceWrapper {
     pub device: Device,
     pub path: PathBuf,
     pub is_absolute: bool,
     pub is_keyboard: bool,
-    
+
     // Pointer state
     pub touch_active: bool,
     pub touch_fingers: u32,
@@ -19,7 +19,7 @@ pub struct DeviceWrapper {
     pub current_dy: i32,
     pub remainder_x: f32,
     pub remainder_y: f32,
-    
+
     // Tap-to-click state
     pub touch_start_time: Option<Instant>,
     pub tap_emitted: bool,
@@ -44,8 +44,10 @@ impl DeviceWrapper {
     pub fn new(device: Device, path: PathBuf) -> Self {
         let is_absolute = device.supported_events().contains(EventType::ABSOLUTE);
         let is_keyboard = device.supported_events().contains(EventType::KEY)
-            && device.supported_keys().is_some_and(|keys| keys.contains(KeyCode::KEY_A));
-        
+            && device
+                .supported_keys()
+                .is_some_and(|keys| keys.contains(KeyCode::KEY_A));
+
         Self {
             device,
             path,
@@ -79,7 +81,7 @@ impl DeviceWrapper {
         if ev.event_type() == EventType::KEY {
             let code = ev.code();
             let value = ev.value();
-            
+
             if code == KeyCode::KEY_LEFTCTRL.0 || code == KeyCode::KEY_RIGHTCTRL.0 {
                 self.ctrl_pressed = value != 0;
             }
@@ -108,7 +110,7 @@ impl DeviceWrapper {
                 }
             }
         }
-        
+
         // If DWT is active, prevent taps from being emitted
         if dwt_active {
             self.tap_emitted = true;
@@ -127,15 +129,27 @@ impl DeviceWrapper {
                         self.last_y = None;
                     } else {
                         // Reset tracking state when the finger is lifted
-                        
+
                         // Tap-to-click logic
                         if config.tap_to_click && !self.tap_emitted && !dwt_active {
                             if let Some(start) = self.touch_start_time {
                                 if start.elapsed() < Duration::from_millis(250) {
                                     // Emit click with proper error handling
-                                    v_device.emit_raw(InputEvent::new(EventType::KEY.0, KeyCode::BTN_LEFT.0, 1))?;
-                                    v_device.emit_raw(InputEvent::new(EventType::SYNCHRONIZATION.0, 0, 0))?;
-                                    v_device.emit_raw(InputEvent::new(EventType::KEY.0, KeyCode::BTN_LEFT.0, 0))?;
+                                    v_device.emit_raw(InputEvent::new(
+                                        EventType::KEY.0,
+                                        KeyCode::BTN_LEFT.0,
+                                        1,
+                                    ))?;
+                                    v_device.emit_raw(InputEvent::new(
+                                        EventType::SYNCHRONIZATION.0,
+                                        0,
+                                        0,
+                                    ))?;
+                                    v_device.emit_raw(InputEvent::new(
+                                        EventType::KEY.0,
+                                        KeyCode::BTN_LEFT.0,
+                                        0,
+                                    ))?;
                                 }
                             }
                         }
@@ -160,7 +174,7 @@ impl DeviceWrapper {
                         self.touch_fingers = 2;
                     }
                 }
-                
+
                 // Only emit standard buttons (left, right, middle) directly
                 let mut code = ev.code();
                 if code == KeyCode::BTN_LEFT.0 {
@@ -180,14 +194,17 @@ impl DeviceWrapper {
                         self.active_click_button = None;
                     }
                 }
-                
-                if code == KeyCode::BTN_LEFT.0 || code == KeyCode::BTN_RIGHT.0 || code == KeyCode::BTN_MIDDLE.0 {
+
+                if code == KeyCode::BTN_LEFT.0
+                    || code == KeyCode::BTN_RIGHT.0
+                    || code == KeyCode::BTN_MIDDLE.0
+                {
                     v_device.emit_raw(InputEvent::new(EventType::KEY.0, code, ev.value()))?;
                 }
             }
             EventType::ABSOLUTE => {
                 let code = ev.code();
-                
+
                 // Only update last_movement_time when actual movement coordinates are received
                 if code == AbsoluteAxisCode::ABS_X.0 || code == AbsoluteAxisCode::ABS_Y.0 {
                     // Only reset tracking if movement has stalled for more than 50ms
@@ -215,9 +232,10 @@ impl DeviceWrapper {
                 }
             }
             EventType::SYNCHRONIZATION => {
-                if ev.code() == 0 { // SYN_REPORT code is 0
+                if ev.code() == 0 {
+                    // SYN_REPORT code is 0
                     let has_movement = self.current_dx != 0 || self.current_dy != 0;
-                    
+
                     if dwt_active {
                         // Throw away movement completely
                         self.current_dx = 0;
@@ -229,12 +247,16 @@ impl DeviceWrapper {
                         self.tap_emitted = true; // Moved enough to cancel tap
 
                         if self.touch_fingers <= 1 {
-                            // Touchpads emit high-resolution absolute coordinates. We must scale these down 
+                            // Touchpads emit high-resolution absolute coordinates. We must scale these down
                             // so they feel like a standard relative mouse to the compositor.
                             let hardware_scale = 0.18; // Increased from 0.12 for faster speed
-                            
-                            let total_x = (self.current_dx as f32 * hardware_scale) * config.pointer_acceleration + self.remainder_x;
-                            let total_y = (self.current_dy as f32 * hardware_scale) * config.pointer_acceleration + self.remainder_y;
+
+                            let total_x = (self.current_dx as f32 * hardware_scale)
+                                * config.pointer_acceleration
+                                + self.remainder_x;
+                            let total_y = (self.current_dy as f32 * hardware_scale)
+                                * config.pointer_acceleration
+                                + self.remainder_y;
 
                             let emit_x = total_x.round() as i32;
                             let emit_y = total_y.round() as i32;
@@ -243,13 +265,15 @@ impl DeviceWrapper {
                             self.remainder_y = total_y - emit_y as f32;
 
                             if emit_x != 0 {
-                                v_device.emit_raw(InputEvent::new(EventType::RELATIVE.0,
+                                v_device.emit_raw(InputEvent::new(
+                                    EventType::RELATIVE.0,
                                     RelativeAxisCode::REL_X.0,
                                     emit_x,
                                 ))?;
                             }
                             if emit_y != 0 {
-                                v_device.emit_raw(InputEvent::new(EventType::RELATIVE.0,
+                                v_device.emit_raw(InputEvent::new(
+                                    EventType::RELATIVE.0,
                                     RelativeAxisCode::REL_Y.0,
                                     emit_y,
                                 ))?;
@@ -257,18 +281,20 @@ impl DeviceWrapper {
                         } else if self.touch_fingers == 2 {
                             // Scroll scaling
                             let scroll_scale = 0.02; // Wheel ticks are integers, scale heavily down
-                            let total_y = (self.current_dy as f32 * scroll_scale) + self.remainder_y;
+                            let total_y =
+                                (self.current_dy as f32 * scroll_scale) + self.remainder_y;
                             let emit_wheel = total_y.round() as i32;
                             self.remainder_y = total_y - emit_wheel as f32;
 
                             if emit_wheel != 0 {
                                 let mut final_wheel = emit_wheel;
-                                // REL_WHEEL typically uses 1 for up, -1 for down. 
+                                // REL_WHEEL typically uses 1 for up, -1 for down.
                                 // Moving fingers down the touchpad increases Y.
                                 if config.natural_scrolling {
                                     final_wheel = -final_wheel;
                                 }
-                                v_device.emit_raw(InputEvent::new(EventType::RELATIVE.0,
+                                v_device.emit_raw(InputEvent::new(
+                                    EventType::RELATIVE.0,
                                     RelativeAxisCode::REL_WHEEL.0,
                                     final_wheel,
                                 ))?;
@@ -280,7 +306,7 @@ impl DeviceWrapper {
                         self.current_dx = 0;
                         self.current_dy = 0;
                     }
-                    
+
                     // Only emit SYN_REPORT if we have valid movement or if DWT is not active
                     if has_movement || !dwt_active {
                         v_device.emit_raw(ev)?;
@@ -303,14 +329,21 @@ fn disable_autosuspend(dev_path: &std::path::Path) {
         let mut sys_path = std::path::PathBuf::from("/sys/class/input");
         sys_path.push(file_name);
         sys_path.push("device");
-        
+
         for _ in 0..4 {
             let power_control = sys_path.join("power/control");
             if power_control.exists() {
                 if let Err(e) = std::fs::write(&power_control, "on") {
-                    log::warn!("Failed to disable autosuspend at {:?}: {}", power_control, e);
+                    log::warn!(
+                        "Failed to disable autosuspend at {:?}: {}",
+                        power_control,
+                        e
+                    );
                 } else {
-                    log::info!("Automatically disabled hardware autosuspend for {:?}", dev_path);
+                    log::info!(
+                        "Automatically disabled hardware autosuspend for {:?}",
+                        dev_path
+                    );
                 }
             }
             sys_path.push("..");
@@ -326,11 +359,17 @@ pub fn try_open_device(path: &std::path::Path) -> Option<DeviceWrapper> {
         if name.contains("virtual pointer") || name.contains("libinput-rs") {
             return None;
         }
-        
-        let is_pointer = name.contains("touchpad") || name.contains("trackpoint") || name.contains("elan") || name.contains("synaptics") || name.contains("mouse");
+
+        let is_pointer = name.contains("touchpad")
+            || name.contains("trackpoint")
+            || name.contains("elan")
+            || name.contains("synaptics")
+            || name.contains("mouse");
         let is_keyboard = device.supported_events().contains(EventType::KEY)
-            && device.supported_keys().is_some_and(|keys| keys.contains(KeyCode::KEY_A));
-        
+            && device
+                .supported_keys()
+                .is_some_and(|keys| keys.contains(KeyCode::KEY_A));
+
         if is_pointer {
             info!("Found target pointer hardware: {} at {:?}", name, path);
             if device.grab().is_ok() {
@@ -351,12 +390,12 @@ pub fn try_open_device(path: &std::path::Path) -> Option<DeviceWrapper> {
 
 pub fn scan_input_devices() -> Result<Vec<DeviceWrapper>, Box<dyn Error>> {
     let mut tracked = Vec::new();
-    
+
     for (path, _) in evdev::enumerate() {
         if let Some(wrapper) = try_open_device(&path) {
             tracked.push(wrapper);
         }
     }
-    
+
     Ok(tracked)
 }
