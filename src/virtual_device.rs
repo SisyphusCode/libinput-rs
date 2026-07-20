@@ -1,7 +1,7 @@
 use evdev::uinput::VirtualDevice as EvdevVirtualDevice;
 use evdev::{AttributeSet, InputEvent, KeyCode, RelativeAxisCode};
-use std::error::Error;
 use log::info;
+use std::error::Error;
 
 pub struct VirtualDevice {
     device: EvdevVirtualDevice,

@@ -1,20 +1,20 @@
-use mio::{Events, Poll, Token, Interest};
-use mio::unix::SourceFd;
-use std::os::unix::io::{AsRawFd, AsFd};
-use std::error::Error;
-use std::time::Instant;
-use std::path::PathBuf;
-use log::{warn, error, info};
-use evdev::InputEvent;
-use nix::sys::inotify::{InitFlags, Inotify, AddWatchFlags};
-use crate::virtual_device::VirtualDevice;
 use crate::config::InputConfig;
 use crate::device::DeviceWrapper;
+use crate::virtual_device::VirtualDevice;
+use evdev::InputEvent;
+use log::{error, info, warn};
+use mio::unix::SourceFd;
+use mio::{Events, Interest, Poll, Token};
+use nix::sys::inotify::{AddWatchFlags, InitFlags, Inotify};
+use std::error::Error;
+use std::os::unix::io::{AsFd, AsRawFd};
+use std::path::PathBuf;
+use std::time::Instant;
 
 pub fn run(
-    initial_devices: Vec<DeviceWrapper>, 
-    v_device: &mut VirtualDevice, 
-    config: &InputConfig
+    initial_devices: Vec<DeviceWrapper>,
+    v_device: &mut VirtualDevice,
+    config: &InputConfig,
 ) -> Result<(), Box<dyn Error>> {
     let mut poll = Poll::new()?;
     let mut events = Events::with_capacity(128);
@@ -27,7 +27,8 @@ pub fn run(
         let raw_fd = wrapper.device.as_raw_fd();
         let token = next_token;
         next_token += 1;
-        poll.registry().register(&mut SourceFd(&raw_fd), Token(token), Interest::READABLE)?;
+        poll.registry()
+            .register(&mut SourceFd(&raw_fd), Token(token), Interest::READABLE)?;
         devices_map.insert(token, wrapper);
     }
 
@@ -35,13 +36,17 @@ pub fn run(
     inotify.add_watch("/dev/input", AddWatchFlags::IN_CREATE | AddWatchFlags::IN_ATTRIB)?;
     let inotify_fd = inotify.as_fd().as_raw_fd();
     let inotify_token = usize::MAX;
-    poll.registry().register(&mut SourceFd(&inotify_fd), Token(inotify_token), Interest::READABLE)?;
+    poll.registry().register(
+        &mut SourceFd(&inotify_fd),
+        Token(inotify_token),
+        Interest::READABLE,
+    )?;
 
     loop {
         poll.poll(&mut events, None)?;
         for event in events.iter() {
             let token_id = event.token().0;
-            
+
             if token_id == inotify_token {
                 if let Ok(inotify_events) = inotify.read_events() {
                     for iev in inotify_events {
@@ -54,17 +59,28 @@ pub fn run(
                                     break;
                                 }
                             }
-                            
+
                             if !already_tracked {
                                 if let Some(wrapper) = crate::device::try_open_device(&path) {
                                     let raw_fd = wrapper.device.as_raw_fd();
                                     let token = next_token;
                                     next_token += 1;
-                                    if poll.registry().register(&mut SourceFd(&raw_fd), Token(token), Interest::READABLE).is_ok() {
+                                    if poll
+                                        .registry()
+                                        .register(
+                                            &mut SourceFd(&raw_fd),
+                                            Token(token),
+                                            Interest::READABLE,
+                                        )
+                                        .is_ok()
+                                    {
                                         devices_map.insert(token, wrapper);
                                         info!("Successfully hotplugged device at {:?}", path);
                                     } else {
-                                        warn!("Failed to register hotplugged device: {:?}", path);
+                                        warn!(
+                                            "Failed to register hotplugged device: {:?}",
+                                            path
+                                        );
                                     }
                                 }
                             }
@@ -78,8 +94,9 @@ pub fn run(
             if let Some(wrapper) = devices_map.get_mut(&token_id) {
                 let device_events = match wrapper.device.fetch_events() {
                     Ok(ev_batch) => Some(ev_batch.collect::<Vec<InputEvent>>()),
-                    Err(e) if e.raw_os_error() == Some(nix::libc::ENODEV)
-                        || e.kind() == std::io::ErrorKind::UnexpectedEof =>
+                    Err(e)
+                        if e.raw_os_error() == Some(nix::libc::ENODEV)
+                            || e.kind() == std::io::ErrorKind::UnexpectedEof =>
                     {
                         info!("Device disconnected: {:?}", wrapper.path);
                         device_disconnected = true;
@@ -89,7 +106,7 @@ pub fn run(
                         error!("Error fetching events from {:?}: {}", wrapper.path, e);
                         None
                     }
-                    Err(_) => None
+                    Err(_) => None,
                 };
 
                 if let Some(evs) = device_events {
@@ -105,7 +122,9 @@ pub fn run(
                             trigger_reset = true;
                         }
 
-                        if let Err(e) = wrapper.process_event(ev, v_device, config, last_global_typing_time) {
+                        if let Err(e) =
+                            wrapper.process_event(ev, v_device, config, last_global_typing_time)
+                        {
                             warn!("Error processing event: {}", e);
                         }
                         if wrapper.is_keyboard {
@@ -116,12 +135,21 @@ pub fn run(
                     }
 
                     if trigger_reset {
-                        static RESETTING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+                        static RESETTING: std::sync::atomic::AtomicBool =
+                            std::sync::atomic::AtomicBool::new(false);
                         if !RESETTING.swap(true, std::sync::atomic::Ordering::SeqCst) {
                             info!("Manual hardware reset triggered via Ctrl+Alt+R! Restarting module...");
                             std::thread::spawn(|| {
-                                if std::process::Command::new("forgectl").arg("start").arg("libinput-elan-reset").output().is_err() {
-                                    let _ = std::process::Command::new("systemctl").arg("start").arg("libinput-elan-reset").output();
+                                if std::process::Command::new("forgectl")
+                                    .arg("start")
+                                    .arg("libinput-elan-reset")
+                                    .output()
+                                    .is_err()
+                                {
+                                    let _ = std::process::Command::new("systemctl")
+                                        .arg("start")
+                                        .arg("libinput-elan-reset")
+                                        .output();
                                 }
                                 // Service takes 1 second to sleep, so we wait 2 seconds before unblocking
                                 std::thread::sleep(std::time::Duration::from_millis(2500));
@@ -138,4 +166,3 @@ pub fn run(
         }
     }
 }
-
