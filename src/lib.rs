@@ -10,9 +10,8 @@ mod backend;
 mod ffi_types;
 
 use crate::ffi_types::{
-    EventPayload, GestureEvent, KeyboardKeyEvent, LibinputContext, LibinputDevice, LibinputEvent,
-    LibinputEventType, LibinputInterface, LibinputSeat, PointerAxisEvent, PointerButtonEvent,
-    PointerMotionAbsoluteEvent, PointerMotionEvent, SwitchEvent, TouchEvent,
+    EventPayload, LibinputContext, LibinputDevice, LibinputEvent, LibinputEventType,
+    LibinputInterface, LibinputSeat,
 };
 
 use std::ffi::CStr;
