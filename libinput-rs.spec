@@ -91,7 +91,7 @@ fi
 
 %files
 # Expose the shared library to RPM tracking
-%{_libdir}/libinput.so.10
+%{_libdir}/libinput.so.*
 %{_bindir}/libinput-rs
 %{_sysconfdir}/libinput-rs/config.json
 %{_unitdir}/libinput-rs.service
