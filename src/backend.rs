@@ -13,11 +13,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use evdev::{AbsoluteAxisCode, Device, EventType, InputEvent, KeyCode, RelativeAxisCode};
 use nix::sys::inotify::{AddWatchFlags, InitFlags, Inotify};
 
-use crate::config::InputConfig;
 use crate::ffi_types::{
-    EventPayload, GestureEvent, KeyboardKeyEvent, LibinputContext, LibinputDevice,
-    LibinputEvent, LibinputEventType, PointerAxisEvent, PointerButtonEvent,
-    PointerMotionEvent,
+    EventPayload, GestureEvent, KeyboardKeyEvent, LibinputContext, LibinputDevice, LibinputEvent,
+    LibinputEventType, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
 };
 
 // ---------------------------------------------------------------------------
@@ -26,25 +24,25 @@ use crate::ffi_types::{
 
 #[derive(Clone, Default)]
 struct MtSlot {
-    active:      bool,
+    active: bool,
     tracking_id: i32,
-    x:           f64,
-    y:           f64,
-    distance:    f64, // ABS_MT_DISTANCE (for stylus / palm)
+    x: f64,
+    y: f64,
+    distance: f64, // ABS_MT_DISTANCE (for stylus / palm)
 }
 
 // ---------------------------------------------------------------------------
 // Key-repeat tracking
 // ---------------------------------------------------------------------------
 
-const REPEAT_DELAY_MS:    u64 = 200;
+const REPEAT_DELAY_MS: u64 = 200;
 const REPEAT_INTERVAL_MS: u64 = 25;
 
 #[derive(Clone)]
 struct HeldKey {
-    code:       u16,
-    ts_usec:    u64,
-    last_fire:  Instant,
+    code: u16,
+    ts_usec: u64,
+    last_fire: Instant,
     initial_fired: bool,
 }
 
@@ -53,35 +51,35 @@ struct HeldKey {
 // ---------------------------------------------------------------------------
 
 struct TrackedDevice {
-    device:      Device,
-    path:        PathBuf,
+    device: Device,
+    path: PathBuf,
     is_absolute: bool,
     is_keyboard: bool,
-    is_pointer:  bool,
+    is_pointer: bool,
 
     // --- relative / button ---
     remainder_x: f32,
     remainder_y: f32,
 
     // --- absolute / touchpad ---
-    touch_active:        bool,
-    touch_fingers:       u32,
-    last_x:              Option<i32>,
-    last_y:              Option<i32>,
-    current_dx:          i32,
-    current_dy:          i32,
-    tap_emitted:         bool,
-    touch_start_time:    Option<Instant>,
-    last_movement_time:  Option<Instant>,
+    touch_active: bool,
+    touch_fingers: u32,
+    last_x: Option<i32>,
+    last_y: Option<i32>,
+    current_dx: i32,
+    current_dy: i32,
+    tap_emitted: bool,
+    touch_start_time: Option<Instant>,
+    last_movement_time: Option<Instant>,
     active_click_button: Option<u16>,
 
     // --- multi-touch slots (for pinch) ---
-    mt_slots:        Vec<MtSlot>,
-    current_slot:    usize,
-    pinch_active:    bool,
+    mt_slots: Vec<MtSlot>,
+    current_slot: usize,
+    pinch_active: bool,
     pinch_base_dist: f64,
     pinch_base_angle: f64,
-    pinch_fingers:   i32,
+    pinch_fingers: i32,
 
     // --- keyboard repeat ---
     held_keys: Vec<HeldKey>,
@@ -111,14 +109,25 @@ impl TrackedDevice {
         let mt_slots = vec![MtSlot::default(); 10];
 
         Self {
-            device, path, is_absolute, is_keyboard, is_pointer,
-            remainder_x: 0.0, remainder_y: 0.0,
-            touch_active: false, touch_fingers: 0,
-            last_x: None, last_y: None,
-            current_dx: 0, current_dy: 0,
-            tap_emitted: false, touch_start_time: None,
-            last_movement_time: None, active_click_button: None,
-            mt_slots, current_slot: 0,
+            device,
+            path,
+            is_absolute,
+            is_keyboard,
+            is_pointer,
+            remainder_x: 0.0,
+            remainder_y: 0.0,
+            touch_active: false,
+            touch_fingers: 0,
+            last_x: None,
+            last_y: None,
+            current_dx: 0,
+            current_dy: 0,
+            tap_emitted: false,
+            touch_start_time: None,
+            last_movement_time: None,
+            active_click_button: None,
+            mt_slots,
+            current_slot: 0,
             pinch_active: false,
             pinch_base_dist: 0.0,
             pinch_base_angle: 0.0,
@@ -129,11 +138,6 @@ impl TrackedDevice {
         }
     }
 
-    fn raw_fd(&self) -> RawFd {
-        use std::os::unix::io::AsRawFd;
-        self.device.as_raw_fd()
-    }
-
     /// Count currently active MT slots.
     fn active_slot_count(&self) -> usize {
         self.mt_slots.iter().filter(|s| s.active).count()
@@ -142,7 +146,9 @@ impl TrackedDevice {
     /// Euclidean distance between the two primary active slots.
     fn primary_slot_distance(&self) -> Option<f64> {
         let active: Vec<&MtSlot> = self.mt_slots.iter().filter(|s| s.active).collect();
-        if active.len() < 2 { return None; }
+        if active.len() < 2 {
+            return None;
+        }
         let dx = active[0].x - active[1].x;
         let dy = active[0].y - active[1].y;
         Some((dx * dx + dy * dy).sqrt())
@@ -151,7 +157,9 @@ impl TrackedDevice {
     /// Angle (degrees) of the vector between the two primary active slots.
     fn primary_slot_angle(&self) -> f64 {
         let active: Vec<&MtSlot> = self.mt_slots.iter().filter(|s| s.active).collect();
-        if active.len() < 2 { return 0.0; }
+        if active.len() < 2 {
+            return 0.0;
+        }
         let dx = active[1].x - active[0].x;
         let dy = active[1].y - active[0].y;
         dy.atan2(dx).to_degrees()
@@ -173,16 +181,15 @@ fn systime_to_usec(t: SystemTime) -> u64 {
 // ---------------------------------------------------------------------------
 
 pub struct BackendState {
-    devices:            HashMap<RawFd, TrackedDevice>,
-    inotify:            Option<Inotify>,
+    devices: HashMap<RawFd, TrackedDevice>,
+    inotify: Option<Inotify>,
     pub global_typing_time: Option<Instant>,
-    config:             InputConfig,
 }
 
 unsafe impl Send for BackendState {}
 
 impl BackendState {
-    pub fn new(config: InputConfig) -> Self {
+    pub fn new() -> Self {
         let inotify = Inotify::init(InitFlags::IN_NONBLOCK).ok().and_then(|ino| {
             ino.add_watch(
                 "/dev/input",
@@ -195,7 +202,6 @@ impl BackendState {
             devices: HashMap::new(),
             inotify,
             global_typing_time: None,
-            config,
         }
     }
 
@@ -215,11 +221,13 @@ impl BackendState {
 
     pub unsafe fn try_open(
         &mut self,
-        ctx:  *mut LibinputContext,
+        ctx: *mut LibinputContext,
         path: &std::path::Path,
-        out:  &mut Vec<LibinputEvent>,
+        out: &mut Vec<LibinputEvent>,
     ) {
-        let Ok(device) = Device::open(path) else { return };
+        let Ok(device) = Device::open(path) else {
+            return;
+        };
         let name = device.name().unwrap_or("Unknown").to_string();
 
         // Skip our own virtual device
@@ -227,7 +235,7 @@ impl BackendState {
             return;
         }
 
-        let props      = device.properties();
+        let props = device.properties();
         let is_pointer = props.contains(evdev::PropType::POINTER)
             || props.contains(evdev::PropType::BUTTONPAD)
             || device.supported_events().contains(EventType::RELATIVE);
@@ -236,32 +244,36 @@ impl BackendState {
             .is_some_and(|k| k.contains(KeyCode::KEY_A));
         let is_absolute = device.supported_events().contains(EventType::ABSOLUTE);
 
-        if !is_pointer && !is_keyboard { return; }
+        if !is_pointer && !is_keyboard {
+            return;
+        }
 
         let lib_dev = Box::into_raw(Box::new(LibinputDevice::new(
             &name,
             path.to_str().unwrap_or(""),
         )));
-        (*lib_dev).has_pointer  = is_pointer;
+        (*lib_dev).has_pointer = is_pointer;
         (*lib_dev).has_keyboard = is_keyboard;
-        (*lib_dev).has_touch    = is_absolute && is_pointer;
-        (*lib_dev).has_gesture  = is_absolute && is_pointer;
+        (*lib_dev).has_touch = is_absolute && is_pointer;
+        (*lib_dev).has_gesture = is_absolute && is_pointer;
         (*ctx).devices.push(lib_dev);
 
         let fd = {
             use std::os::unix::io::AsRawFd;
             device.as_raw_fd()
         };
-        if self.devices.contains_key(&fd) { return; }
+        if self.devices.contains_key(&fd) {
+            return;
+        }
 
         let td = TrackedDevice::new(device, path.to_path_buf(), lib_dev);
         self.devices.insert(fd, td);
 
         out.push(LibinputEvent {
             event_type: LibinputEventType::LIBINPUT_EVENT_DEVICE_ADDED,
-            payload:    EventPayload::DeviceAdded,
-            context:    ctx,
-            device:     lib_dev,
+            payload: EventPayload::DeviceAdded,
+            context: ctx,
+            device: lib_dev,
         });
     }
 
@@ -287,7 +299,7 @@ impl BackendState {
         for fd in fds {
             let td = match self.devices.get_mut(&fd) {
                 Some(d) => d,
-                None    => continue,
+                None => continue,
             };
 
             let batch: Vec<InputEvent> = match td.device.fetch_events() {
@@ -303,13 +315,13 @@ impl BackendState {
                 Err(_) => continue,
             };
 
-            let lib_dev   = td.lib_device;
-            let is_abs    = td.is_absolute;
-            let is_kbd    = td.is_keyboard;
-            let is_ptr    = td.is_pointer;
-            let cfg_tap   = unsafe { &*lib_dev }.tap_enabled;
-            let cfg_nat   = unsafe { &*lib_dev }.natural_scroll;
-            let cfg_dwt   = unsafe { &*lib_dev }.dwt_enabled;
+            let lib_dev = td.lib_device;
+            let is_abs = td.is_absolute;
+            let is_kbd = td.is_keyboard;
+            let is_ptr = td.is_pointer;
+            let cfg_tap = unsafe { &*lib_dev }.tap_enabled;
+            let cfg_nat = unsafe { &*lib_dev }.natural_scroll;
+            let cfg_dwt = unsafe { &*lib_dev }.dwt_enabled;
             let cfg_accel = unsafe { &*lib_dev }.accel_speed as f32 + 1.0;
 
             let global_typing = self.global_typing_time;
@@ -320,8 +332,12 @@ impl BackendState {
                 // ---- Keyboard device ----
                 if is_kbd && !is_abs {
                     Self::process_keyboard_event(
-                        ev, ts_usec, lib_dev, ctx,
-                        td, out,
+                        ev,
+                        ts_usec,
+                        lib_dev,
+                        ctx,
+                        td,
+                        out,
                         &mut self.global_typing_time,
                     );
                     continue;
@@ -329,9 +345,7 @@ impl BackendState {
 
                 // ---- Relative device (mouse / trackpoint) ----
                 if !is_abs && is_ptr {
-                    Self::process_relative_event(
-                        ev, ts_usec, lib_dev, ctx, td, out,
-                    );
+                    Self::process_relative_event(ev, ts_usec, lib_dev, ctx, td, out);
                     continue;
                 }
 
@@ -342,8 +356,7 @@ impl BackendState {
                             .map(|t| t.elapsed() < Duration::from_millis(500))
                             .unwrap_or(false);
                     Self::process_absolute_event(
-                        ev, ts_usec, lib_dev, ctx, td, out,
-                        cfg_tap, cfg_nat, cfg_accel, dwt_active,
+                        ev, ts_usec, lib_dev, ctx, td, out, cfg_tap, cfg_nat, cfg_accel, dwt_active,
                     );
                 }
             }
@@ -354,9 +367,9 @@ impl BackendState {
             if let Some(td) = self.devices.remove(&fd) {
                 out.push_back(LibinputEvent {
                     event_type: LibinputEventType::LIBINPUT_EVENT_DEVICE_REMOVED,
-                    payload:    EventPayload::DeviceRemoved,
-                    context:    ctx,
-                    device:     td.lib_device,
+                    payload: EventPayload::DeviceRemoved,
+                    context: ctx,
+                    device: td.lib_device,
                 });
             }
         }
@@ -372,7 +385,9 @@ impl BackendState {
         out: &mut VecDeque<LibinputEvent>,
     ) {
         let Some(ref ino) = self.inotify else { return };
-        let Ok(ievents) = ino.read_events() else { return };
+        let Ok(ievents) = ino.read_events() else {
+            return;
+        };
         let mut new_paths: Vec<PathBuf> = Vec::new();
         for iev in ievents {
             if let Some(name) = iev.name {
@@ -386,7 +401,9 @@ impl BackendState {
         for p in new_paths {
             self.try_open(ctx, &p, &mut tmp);
         }
-        for ev in tmp { out.push_back(ev); }
+        for ev in tmp {
+            out.push_back(ev);
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -400,7 +417,9 @@ impl BackendState {
     ) {
         let now = Instant::now();
         for td in self.devices.values_mut() {
-            if !td.is_keyboard { continue; }
+            if !td.is_keyboard {
+                continue;
+            }
             let lib_dev = td.lib_device;
             for hk in &mut td.held_keys {
                 let delay = if hk.initial_fired {
@@ -413,13 +432,13 @@ impl BackendState {
                         event_type: LibinputEventType::LIBINPUT_EVENT_KEYBOARD_KEY,
                         payload: EventPayload::KeyboardKey(KeyboardKeyEvent {
                             time_usec: hk.ts_usec,
-                            key:       hk.code as u32,
-                            state:     2, // LIBINPUT_KEY_STATE_REPEAT
+                            key: hk.code as u32,
+                            state: 2, // LIBINPUT_KEY_STATE_REPEAT
                         }),
                         context: ctx,
-                        device:  lib_dev,
+                        device: lib_dev,
                     });
-                    hk.last_fire    = now;
+                    hk.last_fire = now;
                     hk.initial_fired = true;
                 }
             }
@@ -431,44 +450,46 @@ impl BackendState {
     // -----------------------------------------------------------------------
 
     unsafe fn process_keyboard_event(
-        ev:      &InputEvent,
+        ev: &InputEvent,
         ts_usec: u64,
         lib_dev: *mut LibinputDevice,
-        ctx:     *mut LibinputContext,
-        td:      &mut TrackedDevice,
-        out:     &mut VecDeque<LibinputEvent>,
+        ctx: *mut LibinputContext,
+        td: &mut TrackedDevice,
+        out: &mut VecDeque<LibinputEvent>,
         global_typing_time: &mut Option<Instant>,
     ) {
-        if ev.event_type() != EventType::KEY { return; }
-        let code  = ev.code();
+        if ev.event_type() != EventType::KEY {
+            return;
+        }
+        let code = ev.code();
         let value = ev.value(); // 0=up 1=down 2=repeat(kernel)
 
         // Track modifiers for DWT
         match code {
-            c if c == KeyCode::KEY_LEFTCTRL.0  || c == KeyCode::KEY_RIGHTCTRL.0 => {}
-            c if c == KeyCode::KEY_LEFTALT.0   || c == KeyCode::KEY_RIGHTALT.0  => {}
+            c if c == KeyCode::KEY_LEFTCTRL.0 || c == KeyCode::KEY_RIGHTCTRL.0 => {}
+            c if c == KeyCode::KEY_LEFTALT.0 || c == KeyCode::KEY_RIGHTALT.0 => {}
             _ => {}
         }
 
         if value == 1 {
             // Key down: update DWT, start repeat tracking
-            *global_typing_time     = Some(Instant::now());
-            td.last_typing_time      = Some(Instant::now());
+            *global_typing_time = Some(Instant::now());
+            td.last_typing_time = Some(Instant::now());
             td.held_keys.push(HeldKey {
                 code,
                 ts_usec,
-                last_fire:    Instant::now(),
+                last_fire: Instant::now(),
                 initial_fired: false,
             });
             out.push_back(LibinputEvent {
                 event_type: LibinputEventType::LIBINPUT_EVENT_KEYBOARD_KEY,
                 payload: EventPayload::KeyboardKey(KeyboardKeyEvent {
                     time_usec: ts_usec,
-                    key:       code as u32,
-                    state:     1, // LIBINPUT_KEY_STATE_PRESSED
+                    key: code as u32,
+                    state: 1, // LIBINPUT_KEY_STATE_PRESSED
                 }),
                 context: ctx,
-                device:  lib_dev,
+                device: lib_dev,
             });
         } else if value == 0 {
             // Key up: remove from repeat tracking
@@ -477,11 +498,11 @@ impl BackendState {
                 event_type: LibinputEventType::LIBINPUT_EVENT_KEYBOARD_KEY,
                 payload: EventPayload::KeyboardKey(KeyboardKeyEvent {
                     time_usec: ts_usec,
-                    key:       code as u32,
-                    state:     0, // LIBINPUT_KEY_STATE_RELEASED
+                    key: code as u32,
+                    state: 0, // LIBINPUT_KEY_STATE_RELEASED
                 }),
                 context: ctx,
-                device:  lib_dev,
+                device: lib_dev,
             });
         }
         // value==2 (kernel repeat) is intentionally dropped; we synthesise
@@ -493,46 +514,55 @@ impl BackendState {
     // -----------------------------------------------------------------------
 
     unsafe fn process_relative_event(
-        ev:      &InputEvent,
+        ev: &InputEvent,
         ts_usec: u64,
         lib_dev: *mut LibinputDevice,
-        ctx:     *mut LibinputContext,
-        td:      &mut TrackedDevice,
-        out:     &mut VecDeque<LibinputEvent>,
+        ctx: *mut LibinputContext,
+        _td: &mut TrackedDevice,
+        out: &mut VecDeque<LibinputEvent>,
     ) {
         match ev.event_type() {
             EventType::RELATIVE => {
                 let code = ev.code();
-                let val  = ev.value();
+                let val = ev.value();
                 if code == RelativeAxisCode::REL_X.0 {
                     out.push_back(LibinputEvent {
                         event_type: LibinputEventType::LIBINPUT_EVENT_POINTER_MOTION,
                         payload: EventPayload::PointerMotion(PointerMotionEvent {
                             time_usec: ts_usec,
-                            dx: val as f64, dy: 0.0,
-                            dx_unaccel: val as f64, dy_unaccel: 0.0,
+                            dx: val as f64,
+                            dy: 0.0,
+                            dx_unaccel: val as f64,
+                            dy_unaccel: 0.0,
                         }),
-                        context: ctx, device: lib_dev,
+                        context: ctx,
+                        device: lib_dev,
                     });
                 } else if code == RelativeAxisCode::REL_Y.0 {
                     out.push_back(LibinputEvent {
                         event_type: LibinputEventType::LIBINPUT_EVENT_POINTER_MOTION,
                         payload: EventPayload::PointerMotion(PointerMotionEvent {
                             time_usec: ts_usec,
-                            dx: 0.0, dy: val as f64,
-                            dx_unaccel: 0.0, dy_unaccel: val as f64,
+                            dx: 0.0,
+                            dy: val as f64,
+                            dx_unaccel: 0.0,
+                            dy_unaccel: val as f64,
                         }),
-                        context: ctx, device: lib_dev,
+                        context: ctx,
+                        device: lib_dev,
                     });
                 } else if code == RelativeAxisCode::REL_WHEEL.0 {
                     out.push_back(LibinputEvent {
                         event_type: LibinputEventType::LIBINPUT_EVENT_POINTER_SCROLL_WHEEL,
                         payload: EventPayload::PointerAxis(PointerAxisEvent {
                             time_usec: ts_usec,
-                            axis: 0, value: val as f64 * 15.0,
-                            value_discrete: val, source: 1,
+                            axis: 0,
+                            value: val as f64 * 15.0,
+                            value_discrete: val,
+                            source: 1,
                         }),
-                        context: ctx, device: lib_dev,
+                        context: ctx,
+                        device: lib_dev,
                     });
                 } else if code == RelativeAxisCode::REL_HWHEEL.0 {
                     out.push_back(LibinputEvent {
@@ -541,9 +571,11 @@ impl BackendState {
                             time_usec: ts_usec,
                             axis: 1, // LIBINPUT_POINTER_AXIS_SCROLL_HORIZONTAL
                             value: val as f64 * 15.0,
-                            value_discrete: val, source: 1,
+                            value_discrete: val,
+                            source: 1,
                         }),
-                        context: ctx, device: lib_dev,
+                        context: ctx,
+                        device: lib_dev,
                     });
                 }
             }
@@ -561,9 +593,10 @@ impl BackendState {
                         payload: EventPayload::PointerButton(PointerButtonEvent {
                             time_usec: ts_usec,
                             button: code as u32,
-                            state:  ev.value() as u32,
+                            state: ev.value() as u32,
                         }),
-                        context: ctx, device: lib_dev,
+                        context: ctx,
+                        device: lib_dev,
                     });
                 }
             }
@@ -577,49 +610,55 @@ impl BackendState {
 
     #[allow(clippy::too_many_arguments)]
     unsafe fn process_absolute_event(
-        ev:        &InputEvent,
-        ts_usec:   u64,
-        lib_dev:   *mut LibinputDevice,
-        ctx:       *mut LibinputContext,
-        td:        &mut TrackedDevice,
-        out:       &mut VecDeque<LibinputEvent>,
-        cfg_tap:   bool,
-        cfg_nat:   bool,
+        ev: &InputEvent,
+        ts_usec: u64,
+        lib_dev: *mut LibinputDevice,
+        ctx: *mut LibinputContext,
+        td: &mut TrackedDevice,
+        out: &mut VecDeque<LibinputEvent>,
+        cfg_tap: bool,
+        cfg_nat: bool,
         cfg_accel: f32,
         dwt_active: bool,
     ) {
-        if dwt_active { td.tap_emitted = true; }
+        if dwt_active {
+            td.tap_emitted = true;
+        }
 
         match ev.event_type() {
             EventType::KEY => {
-                let code  = ev.code();
+                let code = ev.code();
                 let value = ev.value();
 
                 if code == KeyCode::BTN_TOUCH.0 {
                     td.touch_active = value != 0;
                     if td.touch_active {
                         td.touch_start_time = Some(Instant::now());
-                        td.tap_emitted   = false;
+                        td.tap_emitted = false;
                         td.touch_fingers = td.active_slot_count().max(1) as u32;
-                        td.last_x        = None;
-                        td.last_y        = None;
+                        td.last_x = None;
+                        td.last_y = None;
                         // Pinch BEGIN if 2+ fingers just landed
                         if td.touch_fingers >= 2 && !td.pinch_active {
                             if let Some(dist) = td.primary_slot_distance() {
-                                td.pinch_active    = true;
+                                td.pinch_active = true;
                                 td.pinch_base_dist = dist;
                                 td.pinch_base_angle = td.primary_slot_angle();
-                                td.pinch_fingers   = td.touch_fingers as i32;
+                                td.pinch_fingers = td.touch_fingers as i32;
                                 out.push_back(LibinputEvent {
-                                    event_type: LibinputEventType::LIBINPUT_EVENT_GESTURE_PINCH_BEGIN,
+                                    event_type:
+                                        LibinputEventType::LIBINPUT_EVENT_GESTURE_PINCH_BEGIN,
                                     payload: EventPayload::GesturePinchBegin(GestureEvent {
                                         time_usec: ts_usec,
                                         finger_count: td.pinch_fingers,
-                                        dx: 0.0, dy: 0.0,
-                                        scale: 1.0, angle: 0.0,
+                                        dx: 0.0,
+                                        dy: 0.0,
+                                        scale: 1.0,
+                                        angle: 0.0,
                                         cancelled: false,
                                     }),
-                                    context: ctx, device: lib_dev,
+                                    context: ctx,
+                                    device: lib_dev,
                                 });
                             }
                         }
@@ -632,14 +671,23 @@ impl BackendState {
                                 payload: EventPayload::GesturePinchEnd(GestureEvent {
                                     time_usec: ts_usec,
                                     finger_count: td.pinch_fingers,
-                                    dx: 0.0, dy: 0.0,
-                                    scale: td.primary_slot_distance()
-                                        .map(|d| if td.pinch_base_dist > 0.0 { d / td.pinch_base_dist } else { 1.0 })
+                                    dx: 0.0,
+                                    dy: 0.0,
+                                    scale: td
+                                        .primary_slot_distance()
+                                        .map(|d| {
+                                            if td.pinch_base_dist > 0.0 {
+                                                d / td.pinch_base_dist
+                                            } else {
+                                                1.0
+                                            }
+                                        })
                                         .unwrap_or(1.0),
                                     angle: td.primary_slot_angle() - td.pinch_base_angle,
                                     cancelled: false,
                                 }),
-                                context: ctx, device: lib_dev,
+                                context: ctx,
+                                device: lib_dev,
                             });
                         }
 
@@ -650,30 +698,36 @@ impl BackendState {
                                     && td.touch_fingers <= 1
                                 {
                                     out.push_back(LibinputEvent {
-                                        event_type: LibinputEventType::LIBINPUT_EVENT_POINTER_BUTTON,
+                                        event_type:
+                                            LibinputEventType::LIBINPUT_EVENT_POINTER_BUTTON,
                                         payload: EventPayload::PointerButton(PointerButtonEvent {
                                             time_usec: ts_usec,
                                             button: KeyCode::BTN_LEFT.0 as u32,
                                             state: 1,
                                         }),
-                                        context: ctx, device: lib_dev,
+                                        context: ctx,
+                                        device: lib_dev,
                                     });
                                     out.push_back(LibinputEvent {
-                                        event_type: LibinputEventType::LIBINPUT_EVENT_POINTER_BUTTON,
+                                        event_type:
+                                            LibinputEventType::LIBINPUT_EVENT_POINTER_BUTTON,
                                         payload: EventPayload::PointerButton(PointerButtonEvent {
                                             time_usec: ts_usec,
                                             button: KeyCode::BTN_LEFT.0 as u32,
                                             state: 0,
                                         }),
-                                        context: ctx, device: lib_dev,
+                                        context: ctx,
+                                        device: lib_dev,
                                     });
                                 }
                             }
                         }
-                        td.last_x = None; td.last_y = None;
-                        td.current_dx = 0; td.current_dy = 0;
+                        td.last_x = None;
+                        td.last_y = None;
+                        td.current_dx = 0;
+                        td.current_dy = 0;
                         td.touch_start_time = None;
-                        td.touch_fingers    = 0;
+                        td.touch_fingers = 0;
                     }
                 } else if code == KeyCode::BTN_TOOL_DOUBLETAP.0 {
                     td.touch_fingers = if value != 0 { 2 } else { 1 };
@@ -686,8 +740,11 @@ impl BackendState {
                     let mut mapped = code;
                     if code == KeyCode::BTN_LEFT.0 {
                         if value != 0 {
-                            if td.touch_fingers == 2 { mapped = KeyCode::BTN_RIGHT.0; }
-                            else if td.touch_fingers >= 3 { mapped = KeyCode::BTN_MIDDLE.0; }
+                            if td.touch_fingers == 2 {
+                                mapped = KeyCode::BTN_RIGHT.0;
+                            } else if td.touch_fingers >= 3 {
+                                mapped = KeyCode::BTN_MIDDLE.0;
+                            }
                             td.active_click_button = Some(mapped);
                         } else if let Some(active) = td.active_click_button {
                             mapped = active;
@@ -704,9 +761,10 @@ impl BackendState {
                             payload: EventPayload::PointerButton(PointerButtonEvent {
                                 time_usec: ts_usec,
                                 button: mapped as u32,
-                                state:  value as u32,
+                                state: value as u32,
                             }),
-                            context: ctx, device: lib_dev,
+                            context: ctx,
+                            device: lib_dev,
                         });
                     }
                 }
@@ -714,7 +772,7 @@ impl BackendState {
 
             EventType::ABSOLUTE => {
                 let code = ev.code();
-                let val  = ev.value();
+                let val = ev.value();
 
                 // ---- MT slot tracking ----
                 if code == AbsoluteAxisCode::ABS_MT_SLOT.0 {
@@ -725,7 +783,7 @@ impl BackendState {
                 } else if code == AbsoluteAxisCode::ABS_MT_TRACKING_ID.0 {
                     let slot = td.current_slot;
                     if slot < td.mt_slots.len() {
-                        td.mt_slots[slot].active      = val >= 0;
+                        td.mt_slots[slot].active = val >= 0;
                         td.mt_slots[slot].tracking_id = val;
                     }
                 } else if code == AbsoluteAxisCode::ABS_MT_POSITION_X.0 {
@@ -752,7 +810,9 @@ impl BackendState {
                         }
                     }
                     td.last_movement_time = Some(Instant::now());
-                    if let Some(px) = td.last_x { td.current_dx += val - px; }
+                    if let Some(px) = td.last_x {
+                        td.current_dx += val - px;
+                    }
                     td.last_x = Some(val);
                 } else if code == AbsoluteAxisCode::ABS_Y.0 {
                     if let Some(last) = td.last_movement_time {
@@ -761,45 +821,59 @@ impl BackendState {
                         }
                     }
                     td.last_movement_time = Some(Instant::now());
-                    if let Some(py) = td.last_y { td.current_dy += val - py; }
+                    if let Some(py) = td.last_y {
+                        td.current_dy += val - py;
+                    }
                     td.last_y = Some(val);
                 }
             }
 
             EventType::SYNCHRONIZATION => {
-                if ev.code() != 0 { return; }
+                if ev.code() != 0 {
+                    return;
+                }
 
                 // ---- Pinch UPDATE on SYN_REPORT ----
                 if td.pinch_active && !dwt_active {
                     if let Some(dist) = td.primary_slot_distance() {
                         let scale = if td.pinch_base_dist > 0.0 {
                             dist / td.pinch_base_dist
-                        } else { 1.0 };
+                        } else {
+                            1.0
+                        };
                         let angle = td.primary_slot_angle() - td.pinch_base_angle;
                         out.push_back(LibinputEvent {
                             event_type: LibinputEventType::LIBINPUT_EVENT_GESTURE_PINCH_UPDATE,
                             payload: EventPayload::GesturePinchUpdate(GestureEvent {
                                 time_usec: ts_usec,
                                 finger_count: td.pinch_fingers,
-                                dx: 0.0, dy: 0.0,
-                                scale, angle,
+                                dx: 0.0,
+                                dy: 0.0,
+                                scale,
+                                angle,
                                 cancelled: false,
                             }),
-                            context: ctx, device: lib_dev,
+                            context: ctx,
+                            device: lib_dev,
                         });
                     }
-                    td.current_dx = 0; td.current_dy = 0;
+                    td.current_dx = 0;
+                    td.current_dy = 0;
                     return;
                 }
 
                 let has_movement = td.current_dx != 0 || td.current_dy != 0;
                 if dwt_active {
-                    td.current_dx = 0; td.current_dy = 0;
-                    td.remainder_x = 0.0; td.remainder_y = 0.0;
+                    td.current_dx = 0;
+                    td.current_dy = 0;
+                    td.remainder_x = 0.0;
+                    td.remainder_y = 0.0;
                     td.tap_emitted = true;
                     return;
                 }
-                if !has_movement { return; }
+                if !has_movement {
+                    return;
+                }
 
                 td.tap_emitted = true;
                 let hw_scale: f32 = 0.18;
@@ -808,8 +882,8 @@ impl BackendState {
                 if n_fingers <= 1 {
                     let total_x = (td.current_dx as f32 * hw_scale) * cfg_accel + td.remainder_x;
                     let total_y = (td.current_dy as f32 * hw_scale) * cfg_accel + td.remainder_y;
-                    let emit_x  = total_x.round() as i32;
-                    let emit_y  = total_y.round() as i32;
+                    let emit_x = total_x.round() as i32;
+                    let emit_y = total_y.round() as i32;
                     td.remainder_x = total_x - emit_x as f32;
                     td.remainder_y = total_y - emit_y as f32;
                     if emit_x != 0 || emit_y != 0 {
@@ -817,19 +891,21 @@ impl BackendState {
                             event_type: LibinputEventType::LIBINPUT_EVENT_POINTER_MOTION,
                             payload: EventPayload::PointerMotion(PointerMotionEvent {
                                 time_usec: ts_usec,
-                                dx: emit_x as f64, dy: emit_y as f64,
+                                dx: emit_x as f64,
+                                dy: emit_y as f64,
                                 dx_unaccel: (td.current_dx as f32 * hw_scale) as f64,
                                 dy_unaccel: (td.current_dy as f32 * hw_scale) as f64,
                             }),
-                            context: ctx, device: lib_dev,
+                            context: ctx,
+                            device: lib_dev,
                         });
                     }
                 } else if n_fingers == 2 {
                     let scroll_scale: f32 = 0.02;
-                    let total_y  = td.current_dy as f32 * scroll_scale + td.remainder_y;
-                    let total_x  = td.current_dx as f32 * scroll_scale + td.remainder_x;
-                    let emit_y   = total_y.round() as i32;
-                    let emit_x   = total_x.round() as i32;
+                    let total_y = td.current_dy as f32 * scroll_scale + td.remainder_y;
+                    let total_x = td.current_dx as f32 * scroll_scale + td.remainder_x;
+                    let emit_y = total_y.round() as i32;
+                    let emit_x = total_x.round() as i32;
                     td.remainder_y = total_y - emit_y as f32;
                     td.remainder_x = total_x - emit_x as f32;
                     if emit_y != 0 {
@@ -838,10 +914,13 @@ impl BackendState {
                             event_type: LibinputEventType::LIBINPUT_EVENT_POINTER_SCROLL_FINGER,
                             payload: EventPayload::PointerAxis(PointerAxisEvent {
                                 time_usec: ts_usec,
-                                axis: 0, value: v as f64 * 15.0,
-                                value_discrete: v, source: 2,
+                                axis: 0,
+                                value: v as f64 * 15.0,
+                                value_discrete: v,
+                                source: 2,
                             }),
-                            context: ctx, device: lib_dev,
+                            context: ctx,
+                            device: lib_dev,
                         });
                     }
                     if emit_x != 0 {
@@ -850,10 +929,13 @@ impl BackendState {
                             event_type: LibinputEventType::LIBINPUT_EVENT_POINTER_SCROLL_FINGER,
                             payload: EventPayload::PointerAxis(PointerAxisEvent {
                                 time_usec: ts_usec,
-                                axis: 1, value: v as f64 * 15.0,
-                                value_discrete: v, source: 2,
+                                axis: 1,
+                                value: v as f64 * 15.0,
+                                value_discrete: v,
+                                source: 2,
                             }),
-                            context: ctx, device: lib_dev,
+                            context: ctx,
+                            device: lib_dev,
                         });
                     }
                 } else {
@@ -866,12 +948,16 @@ impl BackendState {
                             finger_count: n_fingers as i32,
                             dx: td.current_dx as f64 * gscale,
                             dy: td.current_dy as f64 * gscale,
-                            scale: 1.0, angle: 0.0, cancelled: false,
+                            scale: 1.0,
+                            angle: 0.0,
+                            cancelled: false,
                         }),
-                        context: ctx, device: lib_dev,
+                        context: ctx,
+                        device: lib_dev,
                     });
                 }
-                td.current_dx = 0; td.current_dy = 0;
+                td.current_dx = 0;
+                td.current_dy = 0;
             }
             _ => {}
         }

@@ -20,6 +20,7 @@ impl Default for InputConfig {
     }
 }
 
+#[allow(dead_code)]
 pub fn load_config() -> Option<InputConfig> {
     let path = "/etc/libinput-rs/config.json";
     if let Ok(data) = fs::read_to_string(path) {

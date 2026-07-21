@@ -12,7 +12,7 @@ path = "src/main.rs"
 
 [lib]
 name = "input"
-crate-type = ["cdylib"]
+crate-type = ["staticlib"]
 path = "src/lib.rs"
 
 [dependencies]
@@ -24,9 +24,3 @@ serde_json = "1.0"
 log = "0.4"
 env_logger = "0.11"
 libc = "0.2"
-
-# Apply the libinput ABI version script when linking the cdylib.
-# This causes `cargo build --lib` to produce a versioned .so that
-# ldconfig and compositors can resolve correctly.
-[package.metadata.cargo-rustc-cdylib-link-args]
-args = ["-Wl,--version-script=libinput.map", "-Wl,-soname,libinput.so.0"]

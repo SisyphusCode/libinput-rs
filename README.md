@@ -74,8 +74,8 @@ cd libinput-rs
 # Arch Linux dependencies
 sudo pacman -S --needed rust cargo libevdev systemd
 
-# Build the shared library
-cargo build --lib --release
+# Build the ABI-versioned shared library
+./build-shared.sh
 
 # Build the optional standalone daemon
 cargo build --bin libinput-rs --release

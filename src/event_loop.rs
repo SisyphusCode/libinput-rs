@@ -80,10 +80,7 @@ pub fn run(
                                         devices_map.insert(token, wrapper);
                                         info!("Successfully hotplugged device at {:?}", path);
                                     } else {
-                                        warn!(
-                                            "Failed to register hotplugged device: {:?}",
-                                            path
-                                        );
+                                        warn!("Failed to register hotplugged device: {:?}", path);
                                     }
                                 }
                             }
