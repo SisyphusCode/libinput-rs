@@ -286,6 +286,7 @@ impl BackendState {
             &name,
             path.to_str().unwrap_or(""),
             (*ctx).seat,
+            ctx,
         )));
         (*lib_dev).has_pointer = is_pointer;
         (*lib_dev).has_keyboard = is_keyboard;

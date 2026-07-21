@@ -177,6 +177,8 @@ pub struct LibinputSeat {
     pub physical_name: CString,
     pub logical_name: CString,
     pub refcount: AtomicI32,
+    pub user_data: *mut libc::c_void,
+    pub context: *mut LibinputContext,
 }
 
 // ---------------------------------------------------------------------------
@@ -210,12 +212,18 @@ pub struct LibinputDevice {
     pub refcount: AtomicI32,
     pub user_data: *mut libc::c_void,
     pub seat: *mut LibinputSeat,
+    pub context: *mut LibinputContext,
 }
 
 unsafe impl Send for LibinputDevice {}
 
 impl LibinputDevice {
-    pub fn new(name: &str, devnode: &str, seat: *mut LibinputSeat) -> Self {
+    pub fn new(
+        name: &str,
+        devnode: &str,
+        seat: *mut LibinputSeat,
+        context: *mut LibinputContext,
+    ) -> Self {
         Self {
             name: CString::new(name).unwrap_or_else(|_| CString::new("Unknown").unwrap()),
             sysname: CString::new("").unwrap(),
@@ -242,6 +250,7 @@ impl LibinputDevice {
             refcount: AtomicI32::new(1),
             user_data: std::ptr::null_mut(),
             seat,
+            context,
         }
     }
 }
@@ -274,6 +283,8 @@ impl LibinputContext {
             physical_name: CString::new("seat0").unwrap(),
             logical_name: CString::new("default").unwrap(),
             refcount: AtomicI32::new(1),
+            user_data: std::ptr::null_mut(),
+            context: std::ptr::null_mut(),
         }));
         let backend = BackendState::new();
         let inotify_fd = backend.inotify_fd();

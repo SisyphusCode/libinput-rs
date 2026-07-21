@@ -3,7 +3,7 @@
 [![CI](https://github.com/SisyphusAeolides/libinput-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/SisyphusAeolides/libinput-rs/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A complete, drop-in Rust replacement for **libinput.so** — same C ABI, same versioned symbol node (`LIBINPUT_0.26`), same SONAME (`libinput.so.0`). Works transparently with any compositor or application that links against libinput: Weston, Sway, KWin, GNOME Shell, libinput-debug-events, and more.
+A complete, drop-in Rust replacement for **libinput.so** — same C ABI, same versioned symbol nodes, same SONAME (`libinput.so.10`). Works transparently with any compositor or application that links against libinput: Weston, Sway, KWin, GNOME Shell, libinput-debug-events, and more.
 
 > **libinput-rs does more than the original.** It adds sub-millisecond keyboard repeat synthesis, full multi-touch pinch gesture detection with live scale + rotation, `INPUT_PROP_POINTER`/`INPUT_PROP_BUTTONPAD` device classification, and a zero-copy event pipeline — all in safe, auditable Rust.
 
@@ -32,7 +32,7 @@ A complete, drop-in Rust replacement for **libinput.so** — same C ABI, same ve
 | Calibration matrix | ✅ | ✅ |
 | Suspend / resume | ✅ | ✅ |
 | `INPUT_PROP_POINTER` classification | ✅ | ✅ |
-| Versioned `.so` (`LIBINPUT_0.26`) | ✅ | ✅ |
+| Versioned `.so` (`LIBINPUT_1.x`) | ✅ | ✅ |
 | Memory safety | ❌ (C) | ✅ (Rust) |
 | CI-gated symbol leak detection | ❌ | ✅ |
 
@@ -157,8 +157,8 @@ Every push and pull request to `main` runs:
 | Lint (zero warnings) | `cargo clippy -D warnings` |
 | Library build | `cargo build --lib --release` |
 | Daemon build | `cargo build --bin --release` |
-| SONAME assertion | `readelf -d` → must be `libinput.so.0` |
-| Versioned symbol check | `nm -D` → must contain `@@LIBINPUT_0.26` |
+| SONAME assertion | `readelf -d` → must be `libinput.so.10` |
+| Versioned symbol check | `nm -D`/`readelf` → exported symbols must use upstream `LIBINPUT_*` nodes |
 | Internal symbol leak check | `nm -D` → no `rust_` or `__rd` exports |
 
 ---
