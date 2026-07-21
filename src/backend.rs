@@ -177,6 +177,20 @@ fn systime_to_usec(t: SystemTime) -> u64 {
 }
 
 // ---------------------------------------------------------------------------
+// Guard: verify a path is a readable character device before opening.
+// This prevents Device::open from blocking when a kernel driver hasn't
+// settled yet during boot or hotplug races.
+// ---------------------------------------------------------------------------
+
+fn is_ready_char_device(path: &std::path::Path) -> bool {
+    use std::os::unix::fs::FileTypeExt;
+    match std::fs::metadata(path) {
+        Ok(m) => m.file_type().is_char_device(),
+        Err(_) => false,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // BackendState
 // ---------------------------------------------------------------------------
 
@@ -225,6 +239,35 @@ impl BackendState {
         path: &std::path::Path,
         out: &mut Vec<LibinputEvent>,
     ) {
+        // Guard: skip paths that are not yet a readable char device.
+        // During boot, udev events can fire before the kernel driver has
+        // finished initializing the node, causing Device::open to block
+        // indefinitely and deadlock the dispatch mutex.
+        if !is_ready_char_device(path) {
+            return;
+        }
+
+        // Open with O_NONBLOCK so we never block even if the guard passes
+        // but the fd would still stall (e.g. slow USB enumeration).
+        let raw_path = match path.to_str() {
+            Some(s) => s,
+            None => return,
+        };
+        let cpath = match std::ffi::CString::new(raw_path) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let test_fd = unsafe {
+            libc::open(
+                cpath.as_ptr(),
+                libc::O_RDONLY | libc::O_NONBLOCK | libc::O_CLOEXEC,
+            )
+        };
+        if test_fd < 0 {
+            return;
+        }
+        unsafe { libc::close(test_fd) };
+
         let Ok(device) = Device::open(path) else {
             return;
         };
@@ -256,6 +299,8 @@ impl BackendState {
         (*lib_dev).has_keyboard = is_keyboard;
         (*lib_dev).has_touch = is_absolute && is_pointer;
         (*lib_dev).has_gesture = is_absolute && is_pointer;
+        // Wire the seat back-pointer so libinput_device_get_seat is non-null.
+        (*lib_dev).seat = &mut *(*ctx).seat as *mut _;
         (*ctx).devices.push(lib_dev);
 
         let fd = {
