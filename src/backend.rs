@@ -6,7 +6,6 @@
 //! LibinputEvents to a caller-supplied queue.
 
 use std::collections::{HashMap, VecDeque};
-use std::os::fd::FromRawFd;
 use std::os::unix::io::RawFd;
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -178,23 +177,6 @@ fn systime_to_usec(t: SystemTime) -> u64 {
 }
 
 // ---------------------------------------------------------------------------
-// Guard: verify a path is a readable character device before opening.
-// This prevents Device::open from blocking when a kernel driver hasn't
-// settled yet during boot or hotplug races.
-// ---------------------------------------------------------------------------
-
-fn is_ready_char_device(path: &std::path::Path) -> bool {
-    use std::os::unix::fs::FileTypeExt;
-    match std::fs::symlink_metadata(path) {
-        Ok(m) if m.file_type().is_symlink() => false,
-        Ok(_) => std::fs::metadata(path)
-            .map(|m| m.file_type().is_char_device())
-            .unwrap_or(false),
-        Err(_) => false,
-    }
-}
-
-// ---------------------------------------------------------------------------
 // BackendState
 // ---------------------------------------------------------------------------
 
@@ -223,6 +205,13 @@ impl BackendState {
         }
     }
 
+    pub fn inotify_fd(&self) -> Option<RawFd> {
+        use std::os::fd::{AsFd, AsRawFd};
+        self.inotify
+            .as_ref()
+            .map(|i| i.as_fd().as_raw_fd())
+    }
+
     // -----------------------------------------------------------------------
     // Device discovery
     // -----------------------------------------------------------------------
@@ -243,37 +232,39 @@ impl BackendState {
         path: &std::path::Path,
         out: &mut Vec<LibinputEvent>,
     ) {
-        // Guard: skip paths that are not yet a readable char device.
-        // During boot, udev events can fire before the kernel driver has
-        // finished initializing the node, causing Device::open to block
-        // indefinitely and deadlock the dispatch mutex.
-        if !is_ready_char_device(path) {
-            return;
-        }
+        let interface = &*(*ctx).interface;
+        let device = if let Some(open_fn) = interface.open_restricted {
+            let c_path = match std::ffi::CString::new(path.to_str().unwrap_or("")) {
+                Ok(c) => c,
+                Err(_) => return,
+            };
+            let raw_fd = open_fn(
+                c_path.as_ptr(),
+                libc::O_RDWR | libc::O_NONBLOCK,
+                (*ctx).user_data,
+            );
+            if raw_fd < 0 {
+                return;
+            }
+            let owned_fd: std::os::fd::OwnedFd = unsafe {
+                std::os::fd::FromRawFd::from_raw_fd(raw_fd)
+            };
+            match Device::from_fd(owned_fd) {
+                Ok(d) => d,
+                Err(_) => {
+                    if let Some(close_fn) = interface.close_restricted {
+                        close_fn(raw_fd, (*ctx).user_data);
+                    }
+                    return;
+                }
+            }
+        } else {
+            let Ok(d) = Device::open(path) else {
+                return;
+            };
+            d
+        };
 
-        // Open with O_NONBLOCK so we never block even if the guard passes
-        // but the fd would still stall (e.g. slow USB enumeration).
-        let raw_path = match path.to_str() {
-            Some(s) => s,
-            None => return,
-        };
-        let cpath = match std::ffi::CString::new(raw_path) {
-            Ok(c) => c,
-            Err(_) => return,
-        };
-        let test_fd = unsafe {
-            libc::open(
-                cpath.as_ptr(),
-                libc::O_RDONLY | libc::O_NONBLOCK | libc::O_CLOEXEC,
-            )
-        };
-        if test_fd < 0 {
-            return;
-        }
-        let owned_fd = unsafe { std::os::fd::OwnedFd::from_raw_fd(test_fd) };
-        let Ok(device) = Device::from_fd(owned_fd) else {
-            return;
-        };
         let name = device.name().unwrap_or("Unknown").to_string();
 
         // Skip our own virtual device
@@ -297,13 +288,12 @@ impl BackendState {
         let lib_dev = Box::into_raw(Box::new(LibinputDevice::new(
             &name,
             path.to_str().unwrap_or(""),
+            (*ctx).seat,
         )));
         (*lib_dev).has_pointer = is_pointer;
         (*lib_dev).has_keyboard = is_keyboard;
         (*lib_dev).has_touch = is_absolute && is_pointer;
         (*lib_dev).has_gesture = is_absolute && is_pointer;
-        // Wire the seat back-pointer so libinput_device_get_seat is non-null.
-        (*lib_dev).seat = &mut *(*ctx).seat as *mut _;
         (*ctx).devices.push(lib_dev);
 
         let fd = {
@@ -313,6 +303,8 @@ impl BackendState {
         if self.devices.contains_key(&fd) {
             return;
         }
+
+        (*ctx).register_fd(fd);
 
         let td = TrackedDevice::new(device, path.to_path_buf(), lib_dev);
         self.devices.insert(fd, td);
@@ -413,6 +405,11 @@ impl BackendState {
         // Remove dead devices
         for fd in dead_fds {
             if let Some(td) = self.devices.remove(&fd) {
+                (*ctx).unregister_fd(fd);
+                let interface = &*(*ctx).interface;
+                if let Some(close_fn) = interface.close_restricted {
+                    close_fn(fd, (*ctx).user_data);
+                }
                 out.push_back(LibinputEvent {
                     event_type: LibinputEventType::LIBINPUT_EVENT_DEVICE_REMOVED,
                     payload: EventPayload::DeviceRemoved,
@@ -1011,3 +1008,4 @@ impl BackendState {
         }
     }
 }
+

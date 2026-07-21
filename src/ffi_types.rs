@@ -170,16 +170,21 @@ pub struct LibinputEvent {
 }
 
 // ---------------------------------------------------------------------------
+// LibinputSeat
+// ---------------------------------------------------------------------------
+
+pub struct LibinputSeat {
+    pub physical_name: CString,
+    pub logical_name: CString,
+    pub refcount: AtomicI32,
+}
+
+// ---------------------------------------------------------------------------
 // LibinputDevice
 // ---------------------------------------------------------------------------
 
-fn make_cstring(s: &str) -> CString {
-    CString::new(s).unwrap_or_else(|_| CString::new("").unwrap())
-}
-
 #[allow(dead_code)]
 pub struct LibinputDevice {
-    // CString fields so .as_ptr() returns valid null-terminated C strings.
     pub name: CString,
     pub sysname: CString,
     pub devnode: CString,
@@ -192,7 +197,7 @@ pub struct LibinputDevice {
     pub has_switch: bool,
     pub has_tablet: bool,
     pub tap_enabled: bool,
-    pub tap_button_map: u32,
+    pub tap_button_map: u32, // 0=LRM 1=LMR
     pub natural_scroll: bool,
     pub accel_speed: f64,
     pub accel_profile: u32,
@@ -204,22 +209,17 @@ pub struct LibinputDevice {
     pub calibration: [f32; 6],
     pub refcount: AtomicI32,
     pub user_data: *mut libc::c_void,
-    // Back-pointer to owning seat so libinput_device_get_seat is non-null.
     pub seat: *mut LibinputSeat,
 }
 
 unsafe impl Send for LibinputDevice {}
 
 impl LibinputDevice {
-    pub fn new(name: &str, devnode: &str) -> Self {
-        let sysname = std::path::Path::new(devnode)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
+    pub fn new(name: &str, devnode: &str, seat: *mut LibinputSeat) -> Self {
         Self {
-            name: make_cstring(name),
-            sysname: make_cstring(sysname),
-            devnode: make_cstring(devnode),
+            name: CString::new(name).unwrap_or_else(|_| CString::new("Unknown").unwrap()),
+            sysname: CString::new("").unwrap(),
+            devnode: CString::new(devnode).unwrap_or_else(|_| CString::new("").unwrap()),
             vendor_id: 0,
             product_id: 0,
             has_keyboard: false,
@@ -241,25 +241,7 @@ impl LibinputDevice {
             calibration: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
             refcount: AtomicI32::new(1),
             user_data: std::ptr::null_mut(),
-            seat: std::ptr::null_mut(),
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// LibinputSeat
-// ---------------------------------------------------------------------------
-
-pub struct LibinputSeat {
-    pub physical_name: CString,
-    pub logical_name: CString,
-}
-
-impl LibinputSeat {
-    pub fn new(physical: &str, logical: &str) -> Self {
-        Self {
-            physical_name: make_cstring(physical),
-            logical_name: make_cstring(logical),
+            seat,
         }
     }
 }
@@ -271,10 +253,10 @@ impl LibinputSeat {
 pub struct LibinputContext {
     pub interface: *const LibinputInterface,
     pub user_data: *mut libc::c_void,
-    pub event_fd: RawFd,
+    pub epoll_fd: RawFd,
     pub event_queue: VecDeque<LibinputEvent>,
     pub devices: Vec<*mut LibinputDevice>,
-    pub seat: Box<LibinputSeat>,
+    pub seat: *mut LibinputSeat,
     pub refcount: AtomicI32,
     pub log_handler: Option<
         unsafe extern "C" fn(ctx: *mut LibinputContext, priority: u32, msg: *const libc::c_char),
@@ -287,32 +269,53 @@ unsafe impl Sync for LibinputContext {}
 
 impl LibinputContext {
     pub fn new(interface: *const LibinputInterface, user_data: *mut libc::c_void) -> Self {
-        let efd = unsafe { libc::eventfd(0, libc::EFD_NONBLOCK | libc::EFD_CLOEXEC) };
-        Self {
+        let epoll_fd = unsafe { libc::epoll_create1(libc::EPOLL_CLOEXEC) };
+        let seat = Box::into_raw(Box::new(LibinputSeat {
+            physical_name: CString::new("seat0").unwrap(),
+            logical_name: CString::new("default").unwrap(),
+            refcount: AtomicI32::new(1),
+        }));
+        let backend = BackendState::new();
+        let inotify_fd = backend.inotify_fd();
+        let ctx = Self {
             interface,
             user_data,
-            event_fd: efd,
+            epoll_fd,
             event_queue: VecDeque::new(),
             devices: Vec::new(),
-            seat: Box::new(LibinputSeat::new("seat0", "default")),
+            seat,
             refcount: AtomicI32::new(1),
             log_handler: None,
-            backend: Mutex::new(BackendState::new()),
+            backend: Mutex::new(backend),
+        };
+        if let Some(fd) = inotify_fd {
+            ctx.register_fd(fd);
+        }
+        ctx
+    }
+
+    pub fn register_fd(&self, fd: RawFd) {
+        let mut ev = libc::epoll_event {
+            events: libc::EPOLLIN as u32,
+            u64: fd as u64,
+        };
+        unsafe {
+            libc::epoll_ctl(self.epoll_fd, libc::EPOLL_CTL_ADD, fd, &mut ev);
+        }
+    }
+
+    pub fn unregister_fd(&self, fd: RawFd) {
+        unsafe {
+            libc::epoll_ctl(self.epoll_fd, libc::EPOLL_CTL_DEL, fd, std::ptr::null_mut());
         }
     }
 
     pub fn signal_fd(&self) {
-        let val: u64 = 1;
-        unsafe {
-            libc::write(self.event_fd, &val as *const u64 as *const libc::c_void, 8);
-        }
+        // No-op: epoll wakes naturally from registered device/inotify fds.
     }
 
     pub fn drain_fd(&self) {
-        let mut buf: u64 = 0;
-        unsafe {
-            libc::read(self.event_fd, &mut buf as *mut u64 as *mut libc::c_void, 8);
-        }
+        // No-op: epoll_wait in libinput_dispatch handles draining readiness.
     }
 
     pub fn inc_ref(&self) {
@@ -325,9 +328,14 @@ impl LibinputContext {
 
 impl Drop for LibinputContext {
     fn drop(&mut self) {
-        if self.event_fd >= 0 {
+        if self.epoll_fd >= 0 {
             unsafe {
-                libc::close(self.event_fd);
+                libc::close(self.epoll_fd);
+            }
+        }
+        if !self.seat.is_null() {
+            unsafe {
+                drop(Box::from_raw(self.seat));
             }
         }
         for dev_ptr in self.devices.drain(..) {
@@ -339,3 +347,4 @@ impl Drop for LibinputContext {
         }
     }
 }
+

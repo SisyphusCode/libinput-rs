@@ -9,8 +9,15 @@
 mod backend;
 mod ffi_types;
 
-use ffi_types::*;
-use std::ffi::{CStr, CString};
+use crate::ffi_types::{
+    EventPayload, LibinputContext, LibinputDevice, LibinputEvent, LibinputEventType,
+    LibinputInterface, LibinputSeat, PointerMotionEvent, PointerMotionAbsoluteEvent,
+    PointerButtonEvent, PointerAxisEvent, KeyboardKeyEvent, TouchEvent, GestureEvent,
+    SwitchEvent
+};
+
+
+use std::ffi::CStr;
 use std::os::unix::io::RawFd;
 
 // ---------------------------------------------------------------------------
@@ -85,18 +92,16 @@ pub unsafe extern "C" fn libinput_udev_assign_seat(
     if ctx.is_null() || seat_name.is_null() {
         return -1;
     }
-    let seat_name = CStr::from_ptr(seat_name).to_string_lossy().into_owned();
-    (*ctx).seat.logical_name =
-        CString::new(seat_name).unwrap_or_else(|_| CString::new("default").expect("literal"));
+    let name = CStr::from_ptr(seat_name).to_string_lossy().into_owned();
+    if let Ok(cname) = std::ffi::CString::new(name) {
+        (*(*ctx).seat).logical_name = cname;
+    }
     let mut tmp: Vec<LibinputEvent> = Vec::new();
     if let Ok(mut backend) = (*ctx).backend.lock() {
         backend.scan_and_open(ctx, &mut tmp);
     }
     for ev in tmp {
         (*ctx).event_queue.push_back(ev);
-    }
-    if !(*ctx).event_queue.is_empty() {
-        (*ctx).signal_fd();
     }
     0
 }
@@ -130,7 +135,7 @@ pub unsafe extern "C" fn libinput_path_remove_device(dev: *mut LibinputDevice) {
     if dev.is_null() {
         return;
     }
-    (*dev).name = CString::new("").expect("literal");
+    (*dev).name = std::ffi::CString::new("").unwrap();
 }
 
 // ---------------------------------------------------------------------------
@@ -142,7 +147,7 @@ pub unsafe extern "C" fn libinput_get_fd(ctx: *mut LibinputContext) -> RawFd {
     if ctx.is_null() {
         return -1;
     }
-    (*ctx).event_fd
+    (*ctx).epoll_fd
 }
 
 #[no_mangle]
@@ -150,11 +155,9 @@ pub unsafe extern "C" fn libinput_dispatch(ctx: *mut LibinputContext) -> libc::c
     if ctx.is_null() {
         return -1;
     }
-    (*ctx).drain_fd();
+    let mut events: [libc::epoll_event; 16] = std::mem::zeroed();
+    libc::epoll_wait((*ctx).epoll_fd, events.as_mut_ptr(), 16, 0);
     populate_events(ctx);
-    if !(*ctx).event_queue.is_empty() {
-        (*ctx).signal_fd();
-    }
     0
 }
 
@@ -852,13 +855,12 @@ pub unsafe extern "C" fn libinput_device_unref(dev: *mut LibinputDevice) -> *mut
     if dev.is_null() {
         return std::ptr::null_mut();
     }
-    let prev = (*dev)
+    let remaining = (*dev)
         .refcount
-        .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-    if prev <= 1 {
-        (*dev)
-            .refcount
-            .store(0, std::sync::atomic::Ordering::SeqCst);
+        .fetch_sub(1, std::sync::atomic::Ordering::SeqCst)
+        - 1;
+    if remaining <= 0 {
+        drop(Box::from_raw(dev));
         std::ptr::null_mut()
     } else {
         dev
@@ -1477,8 +1479,10 @@ pub unsafe extern "C" fn libinput_device_config_calibration_get_default_matrix(
 // ---------------------------------------------------------------------------
 
 #[no_mangle]
-pub unsafe extern "C" fn libinput_device_get_seat(dev: *const LibinputDevice) -> *mut libc::c_void {
-    if dev.is_null() || (*dev).seat.is_null() {
+pub unsafe extern "C" fn libinput_device_get_seat(
+    dev: *const LibinputDevice,
+) -> *mut libc::c_void {
+    if dev.is_null() {
         return std::ptr::null_mut();
     }
     (*dev).seat as *mut libc::c_void
@@ -2234,3 +2238,4 @@ pub unsafe extern "C" fn libinput_suspend(_ctx: *mut LibinputContext) {}
 pub unsafe extern "C" fn libinput_resume(_ctx: *mut LibinputContext) -> libc::c_int {
     0
 }
+
