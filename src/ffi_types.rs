@@ -1,6 +1,7 @@
 //! Opaque C-compatible types exposed through the libinput ABI.
 
 use std::collections::VecDeque;
+use std::ffi::CString;
 use std::os::unix::io::RawFd;
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::Mutex;
@@ -172,11 +173,16 @@ pub struct LibinputEvent {
 // LibinputDevice
 // ---------------------------------------------------------------------------
 
+fn make_cstring(s: &str) -> CString {
+    CString::new(s).unwrap_or_else(|_| CString::new("").unwrap())
+}
+
 #[allow(dead_code)]
 pub struct LibinputDevice {
-    pub name: String,
-    pub sysname: String,
-    pub devnode: String,
+    // CString fields so .as_ptr() returns valid null-terminated C strings.
+    pub name: CString,
+    pub sysname: CString,
+    pub devnode: CString,
     pub vendor_id: u32,
     pub product_id: u32,
     pub has_keyboard: bool,
@@ -186,7 +192,7 @@ pub struct LibinputDevice {
     pub has_switch: bool,
     pub has_tablet: bool,
     pub tap_enabled: bool,
-    pub tap_button_map: u32, // 0=LRM 1=LMR
+    pub tap_button_map: u32,
     pub natural_scroll: bool,
     pub accel_speed: f64,
     pub accel_profile: u32,
@@ -198,16 +204,22 @@ pub struct LibinputDevice {
     pub calibration: [f32; 6],
     pub refcount: AtomicI32,
     pub user_data: *mut libc::c_void,
+    // Back-pointer to owning seat so libinput_device_get_seat is non-null.
+    pub seat: *mut LibinputSeat,
 }
 
 unsafe impl Send for LibinputDevice {}
 
 impl LibinputDevice {
     pub fn new(name: &str, devnode: &str) -> Self {
+        let sysname = std::path::Path::new(devnode)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
         Self {
-            name: name.to_string(),
-            sysname: String::new(),
-            devnode: devnode.to_string(),
+            name: make_cstring(name),
+            sysname: make_cstring(sysname),
+            devnode: make_cstring(devnode),
             vendor_id: 0,
             product_id: 0,
             has_keyboard: false,
@@ -229,6 +241,7 @@ impl LibinputDevice {
             calibration: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
             refcount: AtomicI32::new(1),
             user_data: std::ptr::null_mut(),
+            seat: std::ptr::null_mut(),
         }
     }
 }
@@ -238,8 +251,17 @@ impl LibinputDevice {
 // ---------------------------------------------------------------------------
 
 pub struct LibinputSeat {
-    pub physical_name: String,
-    pub logical_name: String,
+    pub physical_name: CString,
+    pub logical_name: CString,
+}
+
+impl LibinputSeat {
+    pub fn new(physical: &str, logical: &str) -> Self {
+        Self {
+            physical_name: make_cstring(physical),
+            logical_name: make_cstring(logical),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -252,7 +274,7 @@ pub struct LibinputContext {
     pub event_fd: RawFd,
     pub event_queue: VecDeque<LibinputEvent>,
     pub devices: Vec<*mut LibinputDevice>,
-    pub seat: LibinputSeat,
+    pub seat: Box<LibinputSeat>,
     pub refcount: AtomicI32,
     pub log_handler: Option<
         unsafe extern "C" fn(ctx: *mut LibinputContext, priority: u32, msg: *const libc::c_char),
@@ -272,10 +294,7 @@ impl LibinputContext {
             event_fd: efd,
             event_queue: VecDeque::new(),
             devices: Vec::new(),
-            seat: LibinputSeat {
-                physical_name: "seat0".into(),
-                logical_name: "default".into(),
-            },
+            seat: Box::new(LibinputSeat::new("seat0", "default")),
             refcount: AtomicI32::new(1),
             log_handler: None,
             backend: Mutex::new(BackendState::new()),
