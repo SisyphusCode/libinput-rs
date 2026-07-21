@@ -57,12 +57,12 @@ jobs:
         run: |
           SONAME=$(readelf -d target/release/libinput.so | grep SONAME | sed 's/.*\[\(.*\)\]/\1/')
           echo "SONAME=$SONAME"
-          [ "$SONAME" = "libinput.so.0" ] || (echo "SONAME mismatch" && exit 1)
+          [ "$SONAME" = "libinput.so.10" ] || (echo "SONAME mismatch" && exit 1)
 
       - name: Verify versioned symbols
         run: |
-          objdump -T target/release/libinput.so | grep -q 'LIBINPUT_0.26 libinput_get_fd' \
-            || (echo "Missing LIBINPUT_0.26 version node" && exit 1)
+          objdump -T target/release/libinput.so | grep -q 'LIBINPUT_0.12.0 libinput_get_fd' \
+            || (echo "Missing LIBINPUT_0.12.0 symbol version for libinput_get_fd" && exit 1)
           echo "Versioned symbol check passed"
 
       - name: Check for accidentally exported Rust internals
