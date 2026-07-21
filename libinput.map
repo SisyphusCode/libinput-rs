@@ -1,184 +1,299 @@
-/* libinput ABI version script
- *
- * Compositors (wlroots, mutter, KWin, etc.) expect symbols exported at
- * the LIBINPUT_0.x versioned node.  We claim LIBINPUT_0.26 which is the
- * last stable upstream ABI; any client linking against an older node
- * will still resolve because we include all prior version nodes as
- * dependencies below.
- */
-
-LIBINPUT_0.26 {
+/* Generated from upstream libinput symbol versions. */
+LIBINPUT_0.12.0 {
   global:
-    /* Context lifecycle */
-    libinput_udev_create_context;
-    libinput_path_create_context;
-    libinput_ref;
-    libinput_unref;
-    libinput_udev_assign_seat;
-    libinput_path_add_device;
-    libinput_path_remove_device;
-    libinput_suspend;
-    libinput_resume;
-
-    /* FD & dispatch */
-    libinput_get_fd;
+    libinput_device_config_accel_get_default_speed;
+    libinput_device_config_accel_get_speed;
+    libinput_device_config_accel_is_available;
+    libinput_device_config_accel_set_speed;
+    libinput_device_config_calibration_get_default_matrix;
+    libinput_device_config_calibration_get_matrix;
+    libinput_device_config_calibration_has_matrix;
+    libinput_device_config_calibration_set_matrix;
+    libinput_device_config_click_get_default_method;
+    libinput_device_config_click_get_method;
+    libinput_device_config_click_get_methods;
+    libinput_device_config_click_set_method;
+    libinput_device_config_left_handed_get;
+    libinput_device_config_left_handed_get_default;
+    libinput_device_config_left_handed_is_available;
+    libinput_device_config_left_handed_set;
+    libinput_device_config_scroll_get_button;
+    libinput_device_config_scroll_get_default_button;
+    libinput_device_config_scroll_get_default_method;
+    libinput_device_config_scroll_get_default_natural_scroll_enabled;
+    libinput_device_config_scroll_get_method;
+    libinput_device_config_scroll_get_methods;
+    libinput_device_config_scroll_get_natural_scroll_enabled;
+    libinput_device_config_scroll_has_natural_scroll;
+    libinput_device_config_scroll_set_button;
+    libinput_device_config_scroll_set_method;
+    libinput_device_config_scroll_set_natural_scroll_enabled;
+    libinput_device_config_send_events_get_default_mode;
+    libinput_device_config_send_events_get_mode;
+    libinput_device_config_send_events_get_modes;
+    libinput_device_config_send_events_set_mode;
+    libinput_device_config_tap_get_default_enabled;
+    libinput_device_config_tap_get_enabled;
+    libinput_device_config_tap_get_finger_count;
+    libinput_device_config_tap_set_enabled;
+    libinput_device_get_device_group;
+    libinput_device_get_id_product;
+    libinput_device_get_id_vendor;
+    libinput_device_get_name;
+    libinput_device_get_output_name;
+    libinput_device_get_seat;
+    libinput_device_get_size;
+    libinput_device_get_sysname;
+    libinput_device_get_udev_device;
+    libinput_device_get_user_data;
+    libinput_device_has_capability;
+    libinput_device_led_update;
+    libinput_device_pointer_has_button;
+    libinput_device_ref;
+    libinput_device_set_user_data;
+    libinput_device_unref;
     libinput_dispatch;
-
-    /* Event queue */
-    libinput_get_event;
-    libinput_next_event_type;
     libinput_event_destroy;
-    libinput_event_get_type;
     libinput_event_get_context;
     libinput_event_get_device;
-
-    /* Pointer events */
-    libinput_event_get_pointer_event;
-    libinput_event_pointer_get_time_usec;
-    libinput_event_pointer_get_dx;
-    libinput_event_pointer_get_dy;
-    libinput_event_pointer_get_dx_unaccelerated;
-    libinput_event_pointer_get_dy_unaccelerated;
-    libinput_event_pointer_get_absolute_x;
-    libinput_event_pointer_get_absolute_y;
-    libinput_event_pointer_get_button;
-    libinput_event_pointer_get_button_state;
-    libinput_event_pointer_get_axis_value;
-    libinput_event_pointer_get_axis_value_discrete;
-    libinput_event_pointer_get_axis_source;
-    libinput_event_pointer_has_axis;
-
-    /* Keyboard events */
     libinput_event_get_keyboard_event;
-    libinput_event_keyboard_get_time_usec;
+    libinput_event_get_pointer_event;
+    libinput_event_get_touch_event;
+    libinput_event_get_type;
     libinput_event_keyboard_get_key;
     libinput_event_keyboard_get_key_state;
-
-    /* Touch events */
-    libinput_event_get_touch_event;
-    libinput_event_touch_get_time_usec;
+    libinput_event_keyboard_get_seat_key_count;
+    libinput_event_keyboard_get_time;
+    libinput_event_pointer_get_absolute_x;
+    libinput_event_pointer_get_absolute_x_transformed;
+    libinput_event_pointer_get_absolute_y;
+    libinput_event_pointer_get_absolute_y_transformed;
+    libinput_event_pointer_get_axis_source;
+    libinput_event_pointer_get_axis_value;
+    libinput_event_pointer_get_axis_value_discrete;
+    libinput_event_pointer_get_button;
+    libinput_event_pointer_get_button_state;
+    libinput_event_pointer_get_dx;
+    libinput_event_pointer_get_dx_unaccelerated;
+    libinput_event_pointer_get_dy;
+    libinput_event_pointer_get_dy_unaccelerated;
+    libinput_event_pointer_get_seat_button_count;
+    libinput_event_pointer_get_time;
+    libinput_event_pointer_has_axis;
+    libinput_event_touch_get_seat_slot;
     libinput_event_touch_get_slot;
+    libinput_event_touch_get_time;
     libinput_event_touch_get_x;
+    libinput_event_touch_get_x_transformed;
     libinput_event_touch_get_y;
-
-    /* Gesture events */
-    libinput_event_get_gesture_event;
-    libinput_event_gesture_get_finger_count;
-    libinput_event_gesture_get_dx;
-    libinput_event_gesture_get_dy;
-    libinput_event_gesture_get_scale;
+    libinput_event_touch_get_y_transformed;
+    libinput_get_event;
+    libinput_get_fd;
+    libinput_get_user_data;
+    libinput_log_get_priority;
+    libinput_log_set_handler;
+    libinput_log_set_priority;
+    libinput_next_event_type;
+    libinput_path_add_device;
+    libinput_path_create_context;
+    libinput_path_remove_device;
+    libinput_ref;
+    libinput_resume;
+    libinput_seat_get_logical_name;
+    libinput_seat_get_physical_name;
+    libinput_set_user_data;
+    libinput_suspend;
+    libinput_udev_assign_seat;
+    libinput_udev_create_context;
+    libinput_unref;
+  local: *;
+};
+LIBINPUT_0.14.0 {
+  global:
+    libinput_device_config_middle_emulation_get_default_enabled;
+    libinput_device_config_middle_emulation_get_enabled;
+    libinput_device_config_middle_emulation_is_available;
+    libinput_device_config_middle_emulation_set_enabled;
+  local: *;
+} LIBINPUT_0.12.0;
+LIBINPUT_0.15.0 {
+  global:
+    libinput_device_keyboard_has_key;
+  local: *;
+} LIBINPUT_0.14.0;
+LIBINPUT_0.19.0 {
+  global:
+    libinput_device_config_tap_get_default_drag_lock_enabled;
+    libinput_device_config_tap_get_drag_lock_enabled;
+    libinput_device_config_tap_set_drag_lock_enabled;
+  local: *;
+} LIBINPUT_0.15.0;
+LIBINPUT_0.20.0 {
+  global:
     libinput_event_gesture_get_angle_delta;
     libinput_event_gesture_get_cancelled;
-
-    /* Switch events */
+    libinput_event_gesture_get_dx;
+    libinput_event_gesture_get_dx_unaccelerated;
+    libinput_event_gesture_get_dy;
+    libinput_event_gesture_get_dy_unaccelerated;
+    libinput_event_gesture_get_finger_count;
+    libinput_event_gesture_get_scale;
+    libinput_event_gesture_get_time;
+    libinput_event_get_gesture_event;
+  local: *;
+} LIBINPUT_0.19.0;
+LIBINPUT_0.21.0 {
+  global:
+    libinput_device_config_dwt_get_default_enabled;
+    libinput_device_config_dwt_get_enabled;
+    libinput_device_config_dwt_is_available;
+    libinput_device_config_dwt_set_enabled;
+    libinput_event_gesture_get_time_usec;
+    libinput_event_keyboard_get_time_usec;
+    libinput_event_pointer_get_time_usec;
+    libinput_event_touch_get_time_usec;
+  local: *;
+} LIBINPUT_0.20.0;
+LIBINPUT_1.1 {
+  global:
+    libinput_device_config_accel_get_default_profile;
+    libinput_device_config_accel_get_profile;
+    libinput_device_config_accel_get_profiles;
+    libinput_device_config_accel_set_profile;
+  local: *;
+} LIBINPUT_0.21.0;
+LIBINPUT_1.2 {
+  global:
+    libinput_device_config_tap_get_drag_enabled;
+    libinput_device_config_tap_set_drag_enabled;
+    libinput_event_get_tablet_tool_event;
+    libinput_event_tablet_tool_get_button;
+    libinput_event_tablet_tool_get_button_state;
+    libinput_event_tablet_tool_get_distance;
+    libinput_event_tablet_tool_get_dx;
+    libinput_event_tablet_tool_get_dy;
+    libinput_event_tablet_tool_get_pressure;
+    libinput_event_tablet_tool_get_proximity_state;
+    libinput_event_tablet_tool_get_rotation;
+    libinput_event_tablet_tool_get_slider_position;
+    libinput_event_tablet_tool_get_tilt_x;
+    libinput_event_tablet_tool_get_tilt_y;
+    libinput_event_tablet_tool_get_time_usec;
+    libinput_event_tablet_tool_get_tip_state;
+    libinput_event_tablet_tool_get_tool;
+    libinput_event_tablet_tool_get_x_transformed;
+    libinput_event_tablet_tool_get_y_transformed;
+    libinput_tablet_tool_get_serial;
+    libinput_tablet_tool_get_tool_id;
+    libinput_tablet_tool_get_type;
+    libinput_tablet_tool_has_distance;
+    libinput_tablet_tool_has_pressure;
+    libinput_tablet_tool_has_rotation;
+    libinput_tablet_tool_has_slider;
+    libinput_tablet_tool_has_tilt;
+    libinput_tablet_tool_has_wheel;
+    libinput_tablet_tool_ref;
+    libinput_tablet_tool_unref;
+  local: *;
+} LIBINPUT_1.1;
+LIBINPUT_1.3 {
+  global:
+    libinput_device_tablet_pad_get_num_buttons;
+    libinput_device_tablet_pad_get_num_rings;
+    libinput_device_tablet_pad_get_num_strips;
+    libinput_event_get_tablet_pad_event;
+    libinput_event_tablet_pad_get_button_number;
+    libinput_event_tablet_pad_get_button_state;
+    libinput_event_tablet_pad_get_ring_number;
+    libinput_event_tablet_pad_get_ring_position;
+    libinput_event_tablet_pad_get_ring_source;
+    libinput_event_tablet_pad_get_strip_number;
+    libinput_event_tablet_pad_get_strip_position;
+    libinput_event_tablet_pad_get_strip_source;
+    libinput_event_tablet_pad_get_time_usec;
+  local: *;
+} LIBINPUT_1.2;
+LIBINPUT_1.4 {
+  global:
+    libinput_device_config_rotation_get_angle;
+    libinput_device_config_rotation_get_default_angle;
+    libinput_device_config_rotation_is_available;
+    libinput_device_config_rotation_set_angle;
+    libinput_device_tablet_pad_get_mode_group;
+    libinput_device_tablet_pad_get_num_mode_groups;
+    libinput_event_tablet_pad_get_mode;
+    libinput_event_tablet_pad_get_mode_group;
+    libinput_tablet_pad_mode_group_button_is_toggle;
+    libinput_tablet_pad_mode_group_get_index;
+    libinput_tablet_pad_mode_group_get_mode;
+    libinput_tablet_pad_mode_group_get_num_modes;
+    libinput_tablet_pad_mode_group_has_button;
+    libinput_tablet_pad_mode_group_has_ring;
+    libinput_tablet_pad_mode_group_has_strip;
+  local: *;
+} LIBINPUT_1.3;
+LIBINPUT_1.5 {
+  global:
+    libinput_device_config_tap_get_button_map;
+    libinput_device_config_tap_get_default_button_map;
+    libinput_device_config_tap_set_button_map;
+  local: *;
+} LIBINPUT_1.4;
+LIBINPUT_1.7 {
+  global:
     libinput_event_get_switch_event;
     libinput_event_switch_get_switch;
     libinput_event_switch_get_switch_state;
-
-    /* Device info */
-    libinput_device_ref;
-    libinput_device_unref;
-    libinput_device_get_name;
-    libinput_device_get_sysname;
-    libinput_device_get_output_name;
-    libinput_device_get_id_vendor;
-    libinput_device_get_id_product;
-    libinput_device_get_devnode;
-    libinput_device_get_seat;
-    libinput_device_has_capability;
-    libinput_device_set_user_data;
-    libinput_device_get_user_data;
-
-    /* Seat */
-    libinput_seat_get_physical_name;
-    libinput_seat_get_logical_name;
-
-    /* Config — tap */
-    libinput_device_config_tap_get_finger_count;
-    libinput_device_config_tap_set_enabled;
-    libinput_device_config_tap_get_enabled;
-    libinput_device_config_tap_get_default_enabled;
-    libinput_device_config_tap_set_drag_enabled;
-    libinput_device_config_tap_get_drag_enabled;
-    libinput_device_config_tap_set_drag_lock_enabled;
-    libinput_device_config_tap_get_drag_lock_enabled;
-
-    /* Config — acceleration */
-    libinput_device_config_accel_is_available;
-    libinput_device_config_accel_set_speed;
-    libinput_device_config_accel_get_speed;
-    libinput_device_config_accel_get_default_speed;
-    libinput_device_config_accel_get_profiles;
-    libinput_device_config_accel_set_profile;
-    libinput_device_config_accel_get_profile;
-    libinput_device_config_accel_get_default_profile;
-
-    /* Config — natural scroll */
-    libinput_device_config_scroll_has_natural_scroll;
-    libinput_device_config_scroll_set_natural_scroll_enabled;
-    libinput_device_config_scroll_get_natural_scroll_enabled;
-    libinput_device_config_scroll_get_default_natural_scroll_enabled;
-
-    /* Config — left-handed */
-    libinput_device_config_left_handed_is_available;
-    libinput_device_config_left_handed_set;
-    libinput_device_config_left_handed_get;
-    libinput_device_config_left_handed_get_default;
-
-    /* Config — scroll method */
-    libinput_device_config_scroll_get_methods;
-    libinput_device_config_scroll_set_method;
-    libinput_device_config_scroll_get_method;
-    libinput_device_config_scroll_get_default_method;
-    libinput_device_config_scroll_set_button;
-    libinput_device_config_scroll_get_button;
-
-    /* Config — click method */
-    libinput_device_config_click_get_methods;
-    libinput_device_config_click_set_method;
-    libinput_device_config_click_get_method;
-    libinput_device_config_click_get_default_method;
-
-    /* Config — middle emulation */
-    libinput_device_config_middle_emulation_is_available;
-    libinput_device_config_middle_emulation_set_enabled;
-    libinput_device_config_middle_emulation_get_enabled;
-    libinput_device_config_middle_emulation_get_default_enabled;
-
-    /* Config — DWT */
-    libinput_device_config_dwt_is_available;
-    libinput_device_config_dwt_set_enabled;
-    libinput_device_config_dwt_get_enabled;
-    libinput_device_config_dwt_get_default_enabled;
-
-    /* Config — calibration */
-    libinput_device_config_calibration_has_matrix;
-    libinput_device_config_calibration_set_matrix;
-    libinput_device_config_calibration_get_matrix;
-    libinput_device_config_calibration_get_default_matrix;
-
-    /* Logging */
-    libinput_log_set_priority;
-    libinput_log_get_priority;
-    libinput_log_set_handler;
-
-    /* Context user data */
-    libinput_set_user_data;
-    libinput_get_user_data;
-
+    libinput_event_switch_get_time_usec;
   local: *;
-};
-
-/* Older version nodes — empty bodies satisfy clients that DT_NEEDED
- * an earlier LIBINPUT_0.x node without pulling in duplicate symbols. */
-LIBINPUT_0.25 { } LIBINPUT_0.26;
-LIBINPUT_0.24 { } LIBINPUT_0.25;
-LIBINPUT_0.23 { } LIBINPUT_0.24;
-LIBINPUT_0.22 { } LIBINPUT_0.23;
-LIBINPUT_0.21 { } LIBINPUT_0.22;
-LIBINPUT_0.20 { } LIBINPUT_0.21;
-LIBINPUT_0.19 { } LIBINPUT_0.20;
-LIBINPUT_0.18 { } LIBINPUT_0.19;
-LIBINPUT_0.17 { } LIBINPUT_0.18;
-LIBINPUT_0.16 { } LIBINPUT_0.17;
-LIBINPUT_0.15 { } LIBINPUT_0.16;
+} LIBINPUT_1.5;
+LIBINPUT_1.9 {
+  global:
+    libinput_device_switch_has_switch;
+  local: *;
+} LIBINPUT_1.7;
+LIBINPUT_1.11 {
+} LIBINPUT_1.9;
+LIBINPUT_1.14 {
+} LIBINPUT_1.11;
+LIBINPUT_1.15 {
+} LIBINPUT_1.14;
+LIBINPUT_1.19 {
+  global:
+    libinput_event_pointer_get_scroll_value;
+    libinput_event_pointer_get_scroll_value_v120;
+  local: *;
+} LIBINPUT_1.15;
+LIBINPUT_1.21 {
+} LIBINPUT_1.19;
+LIBINPUT_1.23 {
+} LIBINPUT_1.21;
+LIBINPUT_1.26 {
+  global:
+    libinput_device_get_id_bustype;
+    libinput_device_tablet_pad_get_num_dials;
+    libinput_event_tablet_pad_get_dial_delta_v120;
+    libinput_event_tablet_pad_get_dial_number;
+    libinput_tablet_pad_mode_group_has_dial;
+    libinput_tablet_tool_config_pressure_range_is_available;
+    libinput_tablet_tool_config_pressure_range_set;
+  local: *;
+} LIBINPUT_1.23;
+LIBINPUT_1.27 {
+  global:
+    libinput_device_config_area_has_rectangle;
+    libinput_device_config_area_set_rectangle;
+  local: *;
+} LIBINPUT_1.26;
+LIBINPUT_1.28 {
+} LIBINPUT_1.27;
+LIBINPUT_1.29 {
+} LIBINPUT_1.28;
+LIBINPUT_1.30 {
+  global:
+    libinput_plugin_system_append_default_paths;
+    libinput_plugin_system_load_plugins;
+  local: *;
+} LIBINPUT_1.29;
+LIBINPUT_1.31 {
+} LIBINPUT_1.30;

@@ -1558,6 +1558,656 @@ pub unsafe extern "C" fn libinput_device_get_user_data(
 }
 
 // ---------------------------------------------------------------------------
+// ABI compatibility surface for compositors (KWin/GNOME)
+// ---------------------------------------------------------------------------
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_device_config_area_has_rectangle(
+    dev: *const LibinputDevice,
+) -> libc::c_int {
+    if dev.is_null() {
+        return 0;
+    }
+    (*dev).has_touch as libc::c_int
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_device_config_area_set_rectangle(
+    dev: *mut LibinputDevice,
+    _x1: f64,
+    _y1: f64,
+    _x2: f64,
+    _y2: f64,
+) -> u32 {
+    if dev.is_null() {
+        return 1;
+    }
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_device_config_rotation_is_available(
+    dev: *const LibinputDevice,
+) -> libc::c_int {
+    if dev.is_null() {
+        return 0;
+    }
+    (*dev).has_touch as libc::c_int
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_device_config_rotation_set_angle(
+    dev: *mut LibinputDevice,
+    _degrees_cw: u32,
+) -> u32 {
+    if dev.is_null() {
+        return 1;
+    }
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_device_config_rotation_get_angle(
+    _dev: *const LibinputDevice,
+) -> u32 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_device_config_rotation_get_default_angle(
+    _dev: *const LibinputDevice,
+) -> u32 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_device_config_scroll_get_default_button(
+    _dev: *const LibinputDevice,
+) -> u32 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_device_config_send_events_get_modes(
+    _dev: *const LibinputDevice,
+) -> u32 {
+    0b11
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_device_config_send_events_set_mode(
+    dev: *mut LibinputDevice,
+    _mode: u32,
+) -> u32 {
+    if dev.is_null() {
+        return 1;
+    }
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_device_config_send_events_get_mode(
+    _dev: *const LibinputDevice,
+) -> u32 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_device_config_send_events_get_default_mode(
+    _dev: *const LibinputDevice,
+) -> u32 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_device_config_tap_get_default_drag_lock_enabled(
+    _dev: *const LibinputDevice,
+) -> u32 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_device_get_device_group(
+    _dev: *const LibinputDevice,
+) -> *mut libc::c_void {
+    std::ptr::null_mut()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_device_get_id_bustype(_dev: *const LibinputDevice) -> u32 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_device_get_size(
+    _dev: *const LibinputDevice,
+    width: *mut f64,
+    height: *mut f64,
+) -> libc::c_int {
+    if width.is_null() || height.is_null() {
+        return 0;
+    }
+    *width = 0.0;
+    *height = 0.0;
+    1
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_device_get_udev_device(
+    _dev: *const LibinputDevice,
+) -> *mut libc::c_void {
+    std::ptr::null_mut()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_device_keyboard_has_key(
+    dev: *const LibinputDevice,
+    _key: u32,
+) -> libc::c_int {
+    if dev.is_null() {
+        return 0;
+    }
+    (*dev).has_keyboard as libc::c_int
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_device_led_update(dev: *mut LibinputDevice, _leds: u32) -> u32 {
+    if dev.is_null() {
+        return 1;
+    }
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_device_pointer_has_button(
+    dev: *const LibinputDevice,
+    _button: u32,
+) -> libc::c_int {
+    if dev.is_null() {
+        return 0;
+    }
+    (*dev).has_pointer as libc::c_int
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_device_switch_has_switch(
+    dev: *const LibinputDevice,
+    _sw: u32,
+) -> libc::c_int {
+    if dev.is_null() {
+        return 0;
+    }
+    (*dev).has_switch as libc::c_int
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_device_tablet_pad_get_mode_group(
+    _dev: *const LibinputDevice,
+    _index: u32,
+) -> *mut libc::c_void {
+    std::ptr::null_mut()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_device_tablet_pad_get_num_buttons(
+    _dev: *const LibinputDevice,
+) -> u32 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_device_tablet_pad_get_num_dials(
+    _dev: *const LibinputDevice,
+) -> u32 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_device_tablet_pad_get_num_mode_groups(
+    _dev: *const LibinputDevice,
+) -> u32 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_device_tablet_pad_get_num_rings(
+    _dev: *const LibinputDevice,
+) -> u32 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_device_tablet_pad_get_num_strips(
+    _dev: *const LibinputDevice,
+) -> u32 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_get_tablet_pad_event(
+    event: *mut LibinputEvent,
+) -> *mut LibinputEvent {
+    if event.is_null() {
+        return std::ptr::null_mut();
+    }
+    match (*event).event_type {
+        LibinputEventType::LIBINPUT_EVENT_TABLET_PAD_BUTTON
+        | LibinputEventType::LIBINPUT_EVENT_TABLET_PAD_RING
+        | LibinputEventType::LIBINPUT_EVENT_TABLET_PAD_STRIP => event,
+        _ => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_get_tablet_tool_event(
+    event: *mut LibinputEvent,
+) -> *mut LibinputEvent {
+    if event.is_null() {
+        return std::ptr::null_mut();
+    }
+    match (*event).event_type {
+        LibinputEventType::LIBINPUT_EVENT_TABLET_TOOL_AXIS
+        | LibinputEventType::LIBINPUT_EVENT_TABLET_TOOL_PROXIMITY
+        | LibinputEventType::LIBINPUT_EVENT_TABLET_TOOL_TIP
+        | LibinputEventType::LIBINPUT_EVENT_TABLET_TOOL_BUTTON => event,
+        _ => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_pointer_get_absolute_x_transformed(
+    event: *const LibinputEvent,
+    _width: u32,
+) -> f64 {
+    libinput_event_pointer_get_absolute_x(event)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_pointer_get_absolute_y_transformed(
+    event: *const LibinputEvent,
+    _height: u32,
+) -> f64 {
+    libinput_event_pointer_get_absolute_y(event)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_pointer_get_scroll_value(
+    event: *const LibinputEvent,
+    axis: u32,
+) -> f64 {
+    libinput_event_pointer_get_axis_value(event, axis)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_pointer_get_scroll_value_v120(
+    event: *const LibinputEvent,
+    axis: u32,
+) -> f64 {
+    libinput_event_pointer_get_axis_value(event, axis) * 120.0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_switch_get_time_usec(event: *const LibinputEvent) -> u64 {
+    if event.is_null() {
+        return 0;
+    }
+    if let EventPayload::SwitchToggle(e) = &(*event).payload {
+        e.time_usec
+    } else {
+        0
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_tablet_pad_get_button_number(
+    _event: *const LibinputEvent,
+) -> u32 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_tablet_pad_get_button_state(
+    _event: *const LibinputEvent,
+) -> u32 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_tablet_pad_get_dial_delta_v120(
+    _event: *const LibinputEvent,
+) -> f64 {
+    0.0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_tablet_pad_get_dial_number(
+    _event: *const LibinputEvent,
+) -> u32 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_tablet_pad_get_mode(_event: *const LibinputEvent) -> u32 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_tablet_pad_get_mode_group(
+    _event: *const LibinputEvent,
+) -> *mut libc::c_void {
+    std::ptr::null_mut()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_tablet_pad_get_ring_number(
+    _event: *const LibinputEvent,
+) -> u32 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_tablet_pad_get_ring_position(
+    _event: *const LibinputEvent,
+) -> f64 {
+    0.0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_tablet_pad_get_ring_source(
+    _event: *const LibinputEvent,
+) -> u32 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_tablet_pad_get_strip_number(
+    _event: *const LibinputEvent,
+) -> u32 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_tablet_pad_get_strip_position(
+    _event: *const LibinputEvent,
+) -> f64 {
+    0.0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_tablet_pad_get_strip_source(
+    _event: *const LibinputEvent,
+) -> u32 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_tablet_pad_get_time_usec(
+    _event: *const LibinputEvent,
+) -> u64 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_tablet_tool_get_button(
+    _event: *const LibinputEvent,
+) -> u32 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_tablet_tool_get_button_state(
+    _event: *const LibinputEvent,
+) -> u32 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_tablet_tool_get_distance(
+    _event: *const LibinputEvent,
+) -> f64 {
+    0.0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_tablet_tool_get_dx(_event: *const LibinputEvent) -> f64 {
+    0.0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_tablet_tool_get_dy(_event: *const LibinputEvent) -> f64 {
+    0.0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_tablet_tool_get_pressure(
+    _event: *const LibinputEvent,
+) -> f64 {
+    0.0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_tablet_tool_get_proximity_state(
+    _event: *const LibinputEvent,
+) -> u32 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_tablet_tool_get_rotation(
+    _event: *const LibinputEvent,
+) -> f64 {
+    0.0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_tablet_tool_get_slider_position(
+    _event: *const LibinputEvent,
+) -> f64 {
+    0.0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_tablet_tool_get_tilt_x(
+    _event: *const LibinputEvent,
+) -> f64 {
+    0.0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_tablet_tool_get_tilt_y(
+    _event: *const LibinputEvent,
+) -> f64 {
+    0.0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_tablet_tool_get_time_usec(
+    _event: *const LibinputEvent,
+) -> u64 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_tablet_tool_get_tip_state(
+    _event: *const LibinputEvent,
+) -> u32 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_tablet_tool_get_tool(
+    _event: *const LibinputEvent,
+) -> *mut libc::c_void {
+    std::ptr::null_mut()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_tablet_tool_get_x_transformed(
+    _event: *const LibinputEvent,
+    _width: u32,
+) -> f64 {
+    0.0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_event_tablet_tool_get_y_transformed(
+    _event: *const LibinputEvent,
+    _height: u32,
+) -> f64 {
+    0.0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_plugin_system_append_default_paths(_ctx: *mut LibinputContext) {}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_plugin_system_load_plugins(
+    _ctx: *mut LibinputContext,
+) -> libc::c_int {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_tablet_pad_mode_group_button_is_toggle(
+    _group: *const libc::c_void,
+    _button: u32,
+) -> libc::c_int {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_tablet_pad_mode_group_get_index(
+    _group: *const libc::c_void,
+) -> u32 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_tablet_pad_mode_group_get_mode(
+    _group: *const libc::c_void,
+) -> u32 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_tablet_pad_mode_group_get_num_modes(
+    _group: *const libc::c_void,
+) -> u32 {
+    1
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_tablet_pad_mode_group_has_button(
+    _group: *const libc::c_void,
+    _button: u32,
+) -> libc::c_int {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_tablet_pad_mode_group_has_dial(
+    _group: *const libc::c_void,
+    _dial: u32,
+) -> libc::c_int {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_tablet_pad_mode_group_has_ring(
+    _group: *const libc::c_void,
+    _ring: u32,
+) -> libc::c_int {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_tablet_pad_mode_group_has_strip(
+    _group: *const libc::c_void,
+    _strip: u32,
+) -> libc::c_int {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_tablet_tool_config_pressure_range_is_available(
+    _tool: *const libc::c_void,
+) -> libc::c_int {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_tablet_tool_config_pressure_range_set(
+    _tool: *mut libc::c_void,
+    _min: f64,
+    _max: f64,
+) -> u32 {
+    1
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_tablet_tool_get_serial(_tool: *const libc::c_void) -> u64 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_tablet_tool_get_tool_id(_tool: *const libc::c_void) -> u64 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_tablet_tool_get_type(_tool: *const libc::c_void) -> u32 {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_tablet_tool_has_distance(
+    _tool: *const libc::c_void,
+) -> libc::c_int {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_tablet_tool_has_pressure(
+    _tool: *const libc::c_void,
+) -> libc::c_int {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_tablet_tool_has_rotation(
+    _tool: *const libc::c_void,
+) -> libc::c_int {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_tablet_tool_has_slider(
+    _tool: *const libc::c_void,
+) -> libc::c_int {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_tablet_tool_has_tilt(_tool: *const libc::c_void) -> libc::c_int {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_tablet_tool_has_wheel(_tool: *const libc::c_void) -> libc::c_int {
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_tablet_tool_ref(tool: *mut libc::c_void) -> *mut libc::c_void {
+    tool
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libinput_tablet_tool_unref(_tool: *mut libc::c_void) -> *mut libc::c_void {
+    std::ptr::null_mut()
+}
+
+// ---------------------------------------------------------------------------
 // Suspend / resume
 // ---------------------------------------------------------------------------
 
