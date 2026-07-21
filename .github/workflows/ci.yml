@@ -14,15 +14,14 @@ jobs:
   build:
     name: Build & Lint
     runs-on: ubuntu-latest
+    container: archlinux:latest
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Install system dependencies
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            libevdev-dev libudev-dev binutils
+          pacman -Syu --noconfirm --needed rust cargo libevdev systemd binutils
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -80,13 +79,13 @@ jobs:
   test:
     name: Unit Tests
     runs-on: ubuntu-latest
+    container: archlinux:latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Install system dependencies
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends libevdev-dev libudev-dev
+          pacman -Syu --noconfirm --needed rust cargo libevdev systemd
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable

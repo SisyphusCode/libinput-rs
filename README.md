@@ -71,11 +71,8 @@ The library reads `/dev/input/event*` directly via **evdev**, maintains per-devi
 git clone https://github.com/SisyphusAeolides/libinput-rs.git
 cd libinput-rs
 
-# Dependencies (Fedora / RHEL)
-sudo dnf install rust cargo libevdev-devel
-
-# Dependencies (Debian / Ubuntu)
-sudo apt-get install cargo libevdev-dev
+# Arch Linux dependencies
+sudo pacman -S --needed rust cargo libevdev systemd
 
 # Build the shared library
 cargo build --lib --release
@@ -93,12 +90,10 @@ The shared library is output to `target/release/libinput.so`.
 ### Drop-in replacement (recommended)
 
 ```bash
-# Back up the original
-sudo cp /usr/lib64/libinput.so.0 /usr/lib64/libinput.so.0.bak
-
-# Install
-sudo cp target/release/libinput.so /usr/lib64/libinput.so.0
-sudo ldconfig
+# Build and install the Arch package
+git clone https://github.com/SisyphusAeolides/arch-pkgbuilds.git
+cd arch-pkgbuilds/libinput-rs
+makepkg -si
 ```
 
 ### LD_PRELOAD (no system files touched)
@@ -106,22 +101,6 @@ sudo ldconfig
 ```bash
 LD_PRELOAD=/path/to/target/release/libinput.so sway
 ```
-
-### RPM (Fedora)
-
-```bash
-./build_package.sh
-sudo dnf localinstall build_workspace/RPMS/x86_64/libinput-rs-*.rpm
-```
-
-### COPR
-
-```bash
-sudo dnf copr enable sisyphuscode/libinput-rs
-sudo dnf install libinput-rs
-```
-
----
 
 ## Configuration
 
