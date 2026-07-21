@@ -6,6 +6,7 @@
 //! LibinputEvents to a caller-supplied queue.
 
 use std::collections::{HashMap, VecDeque};
+use std::os::fd::FromRawFd;
 use std::os::unix::io::RawFd;
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -184,8 +185,11 @@ fn systime_to_usec(t: SystemTime) -> u64 {
 
 fn is_ready_char_device(path: &std::path::Path) -> bool {
     use std::os::unix::fs::FileTypeExt;
-    match std::fs::metadata(path) {
-        Ok(m) => m.file_type().is_char_device(),
+    match std::fs::symlink_metadata(path) {
+        Ok(m) if m.file_type().is_symlink() => false,
+        Ok(_) => std::fs::metadata(path)
+            .map(|m| m.file_type().is_char_device())
+            .unwrap_or(false),
         Err(_) => false,
     }
 }
@@ -266,9 +270,8 @@ impl BackendState {
         if test_fd < 0 {
             return;
         }
-        unsafe { libc::close(test_fd) };
-
-        let Ok(device) = Device::open(path) else {
+        let owned_fd = unsafe { std::os::fd::OwnedFd::from_raw_fd(test_fd) };
+        let Ok(device) = Device::from_fd(owned_fd) else {
             return;
         };
         let name = device.name().unwrap_or("Unknown").to_string();

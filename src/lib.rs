@@ -10,7 +10,7 @@ mod backend;
 mod ffi_types;
 
 use ffi_types::*;
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 use std::os::unix::io::RawFd;
 
 // ---------------------------------------------------------------------------
@@ -85,7 +85,9 @@ pub unsafe extern "C" fn libinput_udev_assign_seat(
     if ctx.is_null() || seat_name.is_null() {
         return -1;
     }
-    (*ctx).seat.logical_name = CStr::from_ptr(seat_name).to_string_lossy().into_owned();
+    let seat_name = CStr::from_ptr(seat_name).to_string_lossy().into_owned();
+    (*ctx).seat.logical_name =
+        CString::new(seat_name).unwrap_or_else(|_| CString::new("default").expect("literal"));
     let mut tmp: Vec<LibinputEvent> = Vec::new();
     if let Ok(mut backend) = (*ctx).backend.lock() {
         backend.scan_and_open(ctx, &mut tmp);
@@ -128,7 +130,7 @@ pub unsafe extern "C" fn libinput_path_remove_device(dev: *mut LibinputDevice) {
     if dev.is_null() {
         return;
     }
-    (*dev).name = String::new();
+    (*dev).name = CString::new("").expect("literal");
 }
 
 // ---------------------------------------------------------------------------
@@ -850,10 +852,17 @@ pub unsafe extern "C" fn libinput_device_unref(dev: *mut LibinputDevice) -> *mut
     if dev.is_null() {
         return std::ptr::null_mut();
     }
-    (*dev)
+    let prev = (*dev)
         .refcount
         .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-    std::ptr::null_mut()
+    if prev <= 1 {
+        (*dev)
+            .refcount
+            .store(0, std::sync::atomic::Ordering::SeqCst);
+        std::ptr::null_mut()
+    } else {
+        dev
+    }
 }
 
 #[no_mangle]
@@ -863,7 +872,7 @@ pub unsafe extern "C" fn libinput_device_get_name(
     if dev.is_null() {
         return std::ptr::null();
     }
-    (*dev).name.as_ptr() as *const libc::c_char
+    (*dev).name.as_ptr()
 }
 
 #[no_mangle]
@@ -873,7 +882,7 @@ pub unsafe extern "C" fn libinput_device_get_sysname(
     if dev.is_null() {
         return std::ptr::null();
     }
-    (*dev).sysname.as_ptr() as *const libc::c_char
+    (*dev).sysname.as_ptr()
 }
 
 #[no_mangle]
@@ -908,7 +917,7 @@ pub unsafe extern "C" fn libinput_device_get_devnode(
     if dev.is_null() {
         return std::ptr::null();
     }
-    (*dev).devnode.as_ptr() as *const libc::c_char
+    (*dev).devnode.as_ptr()
 }
 
 #[no_mangle]
@@ -1468,24 +1477,31 @@ pub unsafe extern "C" fn libinput_device_config_calibration_get_default_matrix(
 // ---------------------------------------------------------------------------
 
 #[no_mangle]
-pub unsafe extern "C" fn libinput_device_get_seat(
-    _dev: *const LibinputDevice,
-) -> *mut libc::c_void {
-    std::ptr::null_mut()
+pub unsafe extern "C" fn libinput_device_get_seat(dev: *const LibinputDevice) -> *mut libc::c_void {
+    if dev.is_null() || (*dev).seat.is_null() {
+        return std::ptr::null_mut();
+    }
+    (*dev).seat as *mut libc::c_void
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn libinput_seat_get_physical_name(
-    _seat: *const libc::c_void,
+    seat: *const libc::c_void,
 ) -> *const libc::c_char {
-    c"seat0".as_ptr()
+    if seat.is_null() {
+        return std::ptr::null();
+    }
+    (*(seat as *const LibinputSeat)).physical_name.as_ptr()
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn libinput_seat_get_logical_name(
-    _seat: *const libc::c_void,
+    seat: *const libc::c_void,
 ) -> *const libc::c_char {
-    c"default".as_ptr()
+    if seat.is_null() {
+        return std::ptr::null();
+    }
+    (*(seat as *const LibinputSeat)).logical_name.as_ptr()
 }
 
 // ---------------------------------------------------------------------------
