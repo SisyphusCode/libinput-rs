@@ -10,12 +10,10 @@ mod backend;
 mod ffi_types;
 
 use crate::ffi_types::{
-    EventPayload, LibinputContext, LibinputDevice, LibinputEvent, LibinputEventType,
-    LibinputInterface, LibinputSeat, PointerMotionEvent, PointerMotionAbsoluteEvent,
-    PointerButtonEvent, PointerAxisEvent, KeyboardKeyEvent, TouchEvent, GestureEvent,
-    SwitchEvent
+    EventPayload, GestureEvent, KeyboardKeyEvent, LibinputContext, LibinputDevice, LibinputEvent,
+    LibinputEventType, LibinputInterface, LibinputSeat, PointerAxisEvent, PointerButtonEvent,
+    PointerMotionAbsoluteEvent, PointerMotionEvent, SwitchEvent, TouchEvent,
 };
-
 
 use std::ffi::CStr;
 use std::os::unix::io::RawFd;
@@ -1479,9 +1477,7 @@ pub unsafe extern "C" fn libinput_device_config_calibration_get_default_matrix(
 // ---------------------------------------------------------------------------
 
 #[no_mangle]
-pub unsafe extern "C" fn libinput_device_get_seat(
-    dev: *const LibinputDevice,
-) -> *mut libc::c_void {
+pub unsafe extern "C" fn libinput_device_get_seat(dev: *const LibinputDevice) -> *mut libc::c_void {
     if dev.is_null() {
         return std::ptr::null_mut();
     }
@@ -2238,4 +2234,3 @@ pub unsafe extern "C" fn libinput_suspend(_ctx: *mut LibinputContext) {}
 pub unsafe extern "C" fn libinput_resume(_ctx: *mut LibinputContext) -> libc::c_int {
     0
 }
-

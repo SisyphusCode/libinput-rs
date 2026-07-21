@@ -347,4 +347,3 @@ impl Drop for LibinputContext {
         }
     }
 }
-

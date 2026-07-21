@@ -207,9 +207,7 @@ impl BackendState {
 
     pub fn inotify_fd(&self) -> Option<RawFd> {
         use std::os::fd::{AsFd, AsRawFd};
-        self.inotify
-            .as_ref()
-            .map(|i| i.as_fd().as_raw_fd())
+        self.inotify.as_ref().map(|i| i.as_fd().as_raw_fd())
     }
 
     // -----------------------------------------------------------------------
@@ -246,9 +244,8 @@ impl BackendState {
             if raw_fd < 0 {
                 return;
             }
-            let owned_fd: std::os::fd::OwnedFd = unsafe {
-                std::os::fd::FromRawFd::from_raw_fd(raw_fd)
-            };
+            let owned_fd: std::os::fd::OwnedFd =
+                unsafe { std::os::fd::FromRawFd::from_raw_fd(raw_fd) };
             match Device::from_fd(owned_fd) {
                 Ok(d) => d,
                 Err(_) => {
@@ -1008,4 +1005,3 @@ impl BackendState {
         }
     }
 }
-
